@@ -1,4 +1,5 @@
 # elm-package generated files
 elm-stuff
+.DS_Store
 # elm-repl generated files
 repl-temp-*
