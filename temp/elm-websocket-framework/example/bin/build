@@ -1,0 +1,5 @@
+#!/bin/bash
+
+elm make src/Example.elm --output site/index.html
+
+

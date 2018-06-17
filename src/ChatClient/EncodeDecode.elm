@@ -147,7 +147,7 @@ reqPlist =
 
 rspPlist : DecoderPlist Message
 rspPlist =
-    [ ( "join", joinChatRspDecoder )
+    [ ( "joinChat", joinChatRspDecoder )
     , ( "receive", receiveRspDecoder )
     , ( "leave", leaveChatRspDecoder )
     , ( "error", errorRspDecoder )

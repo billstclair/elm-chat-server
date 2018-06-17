@@ -1,0 +1,10 @@
+#!/bin/bash
+
+elm make src/Example.elm --output site/index.html
+if [[ -z $* ]]; then
+  cd site
+  rsyncit
+fi
+
+
+

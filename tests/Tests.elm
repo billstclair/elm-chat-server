@@ -1,0 +1,139 @@
+module Tests exposing (all)
+
+import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
+import ChatClient.Types as Types
+    exposing
+        ( Message(..)
+        )
+import Dict
+import Expect exposing (Expectation)
+import Json.Decode as JD exposing (Decoder)
+import Json.Encode as JE exposing (Value)
+import List
+import Maybe exposing (withDefault)
+import Test exposing (..)
+import WebSocketFramework.EncodeDecode exposing (decodeMessage, encodeMessage)
+
+
+log =
+    Debug.log
+
+
+{-| change to True to log JSON input & output results
+-}
+enableLogging : Bool
+enableLogging =
+    False
+
+
+maybeLog : String -> a -> a
+maybeLog label value =
+    if enableLogging then
+        log label value
+    else
+        value
+
+
+testMap : (x -> String -> Test) -> List x -> List Test
+testMap test data =
+    let
+        numbers =
+            List.map toString <| List.range 1 (List.length data)
+    in
+    List.map2 test data numbers
+
+
+all : Test
+all =
+    Test.concat <|
+        List.concat
+            [ testMap protocolTest protocolData
+            ]
+
+
+expectResult : Result String Message -> Result String Message -> Expectation
+expectResult sb was =
+    case maybeLog "  result" was of
+        Err msg ->
+            case sb of
+                Err _ ->
+                    Expect.true "You shouldn't ever see this." True
+
+                Ok _ ->
+                    Expect.false msg True
+
+        Ok wasv ->
+            case sb of
+                Err _ ->
+                    Expect.false "Expected an error but didn't get one." True
+
+                Ok sbv ->
+                    Expect.equal sbv wasv
+
+
+encode : Message -> String
+encode message =
+    encodeMessage messageEncoder message
+
+
+decode : String -> Result String Message
+decode string =
+    decodeMessage messageDecoder string
+
+
+protocolTest : Message -> String -> Test
+protocolTest message name =
+    test ("protocolTest \"" ++ name ++ "\"")
+        (\_ ->
+            let
+                json =
+                    maybeLog "protocolJson" <| encode message
+            in
+            expectResult (Ok message) <| decode json
+        )
+
+
+protocolData : List Message
+protocolData =
+    [ NewChatReq { memberName = "Bill" }
+    , NewPublicChatReq
+        { memberName = "Bill"
+        , chatName = "Anarchy"
+        }
+    , JoinChatReq
+        { chatid = "Anarchy"
+        , memberName = "John"
+        }
+    , JoinChatRsp
+        { chatid = "Anarchy"
+        , memberid = Just "123skidoo"
+        , memberName = "John"
+        , otherMembers = [ "Bill" ]
+        , isPublic = True
+        }
+    , JoinChatRsp
+        { chatid = "Anarchy"
+        , memberid = Nothing
+        , memberName = "Lysander"
+        , otherMembers = []
+        , isPublic = True
+        }
+    , SendReq
+        { memberid = "123skidoo"
+        , message = "Muh Roads!!"
+        }
+    , ReceiveRsp
+        { chatid = "Anarchy"
+        , memberName = "John"
+        , message = "Muh Roads!!"
+        }
+    , LeaveChatReq { memberid = "123skidoo" }
+    , LeaveChatRsp
+        { chatid = "Anarchy"
+        , memberName = "John"
+        }
+    , ErrorRsp
+        { chatid = "Anarchy"
+        , message = "Taxation is theft!"
+        }
+    ]
