@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 --
 -- ChatClient.elm
--- The client side of a chat client/server to demo billstclair/elm-websocket-framework
+-- The client side of a chat client/server demo for billstclair/elm-websocket-framework
 -- Copyright (c) 2017 Bill St. Clair <billstclair@gmail.com>
 -- Some rights reserved.
 -- Distributed under the MIT License
@@ -13,6 +13,7 @@
 module ChatClient exposing (..)
 
 import Char
+import ChatClient.Types exposing (GameState, MemberName, Message(..), Player)
 import Debug exposing (log)
 import ElmChat
 import Html
@@ -34,6 +35,7 @@ import Html
         )
 import Html.Attributes exposing (disabled, href, size, style, type_, value)
 import Html.Events exposing (onClick, onInput)
+import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface)
 
 
 main =
@@ -45,33 +47,33 @@ main =
         }
 
 
+type alias ChatInfo =
+    { chatName : String
+    , memberName : MemberName
+    , serverInterface : ServerInterface GameState Player Message Msg
+    , chatid : GameId
+    , memberid : PlayerId
+    , isPublic : Bool
+    , state : String
+    }
+
+
 type alias Model =
     { settings : ElmChat.Settings Msg
-
-    -- Your code won't need a duplicate settings property.
-    -- It's here only because this example has two input boxes.
-    , settings2 : ElmChat.Settings Msg
-    , json : String
+    , chats : List ChatInfo
     , error : Maybe String
     }
 
 
 type Msg
     = ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
-    | ChatSend1 String String (ElmChat.Settings Msg)
-      -- Your code won't need these additional messages.
-      -- They're here only because this examples has two input boxes.
-    | ChatUpdate2 (ElmChat.Settings Msg) (Cmd Msg)
-    | ChatSend2 String String (ElmChat.Settings Msg)
-    | UpdateJson String
-    | Restore
+    | ChatSend String String (ElmChat.Settings Msg)
 
 
 init : ( Model, Cmd Msg )
 init =
     ( { settings = ElmChat.makeSettings "id1" 14 True ChatUpdate
-      , settings2 = ElmChat.makeSettings "id2" 14 True ChatUpdate2
-      , json = ""
+      , chats = []
       , error = Nothing
       }
     , Cmd.none
@@ -86,7 +88,7 @@ update msg model =
             , cmd
             )
 
-        ChatSend1 name line settings ->
+        ChatSend name line settings ->
             let
                 ( settings1, cmd ) =
                     ElmChat.addChat settings (name ++ ": " ++ line)
@@ -94,43 +96,6 @@ update msg model =
             ( { model | settings = settings1 }
             , cmd
             )
-
-        ChatUpdate2 settings cmd ->
-            ( { model | settings2 = settings }
-            , cmd
-            )
-
-        ChatSend2 name line settings2 ->
-            let
-                ( settings, cmd ) =
-                    ElmChat.addChat model.settings (name ++ ": " ++ line)
-            in
-            ( { model
-                | settings = settings
-                , settings2 = settings2
-              }
-            , cmd
-            )
-
-        UpdateJson json ->
-            ( { model | json = json }
-            , Cmd.none
-            )
-
-        Restore ->
-            case ElmChat.decodeSettings ChatUpdate model.json of
-                Err msg ->
-                    ( { model | error = Just msg }
-                    , Cmd.none
-                    )
-
-                Ok settings ->
-                    ( { model
-                        | settings = settings
-                        , error = Nothing
-                      }
-                    , ElmChat.restoreScroll settings
-                    )
 
 
 b : String -> Html Msg
@@ -156,45 +121,8 @@ view model =
                         [ ElmChat.inputBox
                             40
                             "Send"
-                            (ChatSend1 "Bill")
+                            (ChatSend "Bill")
                             model.settings
-                        ]
-                    ]
-                , tr []
-                    [ td [] [ b "Mary: " ]
-                    , td []
-                        [ ElmChat.inputBox
-                            40
-                            "Send"
-                            (ChatSend2 "Mary")
-                            model.settings2
-                        ]
-                    ]
-                , tr []
-                    [ td [] [ b "JSON: " ]
-                    , td []
-                        [ input
-                            [ type_ "text"
-                            , disabled True
-                            , size 40
-                            , value <| ElmChat.encodeSettings model.settings
-                            ]
-                            []
-                        ]
-                    ]
-                , tr []
-                    [ td [] []
-                    , td []
-                        [ input
-                            [ type_ "text"
-                            , onInput UpdateJson
-                            , size 40
-                            , value model.json
-                            ]
-                            []
-                        , text " "
-                        , button [ onClick Restore ]
-                            [ text "Restore" ]
                         ]
                     ]
                 ]
