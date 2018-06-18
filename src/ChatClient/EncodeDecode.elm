@@ -112,34 +112,6 @@ messageEncoder message =
             )
 
 
-type alias DecoderPlist msg =
-    List ( String, Decoder msg )
-
-
-genericMessageDecoder : DecoderPlist msg -> DecoderPlist msg -> MessageDecoder msg
-genericMessageDecoder reqPlist rspPlist ( reqrsp, plist ) =
-    case reqrsp of
-        Req msg ->
-            decoderPlistDecoder reqPlist "request" msg plist
-
-        Rsp msg ->
-            decoderPlistDecoder rspPlist "response" msg plist
-
-
-decoderPlistDecoder : DecoderPlist msg -> String -> String -> Plist -> Result String msg
-decoderPlistDecoder decoderPlist typ msg plist =
-    let
-        dict =
-            Dict.fromList decoderPlist
-    in
-    case Dict.get msg dict of
-        Nothing ->
-            Err <| "Unknown " ++ typ ++ "message: '" ++ msg ++ "'"
-
-        Just decoder ->
-            decodePlist decoder plist
-
-
 messageDecoder : MessageDecoder Message
 messageDecoder reqrspAndPlist =
     genericMessageDecoder reqPlist rspPlist reqrspAndPlist
