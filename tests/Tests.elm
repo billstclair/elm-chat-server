@@ -95,7 +95,9 @@ protocolTest message name =
 
 protocolData : List Message
 protocolData =
-    [ NewChatReq { memberName = "Bill" }
+    [ PingReq { message = "Hello, World!" }
+    , PongRsp { message = "Hello, World!" }
+    , NewChatReq { memberName = "Bill" }
     , NewPublicChatReq
         { memberName = "Bill"
         , chatName = "Anarchy"

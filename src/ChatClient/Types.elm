@@ -47,7 +47,9 @@ type alias PublicChatName =
 
 
 type Message
-    = NewChatReq { memberName : MemberName }
+    = PingReq { message : String }
+    | PongRsp { message : String }
+    | NewChatReq { memberName : MemberName }
     | NewPublicChatReq
         { memberName : MemberName
         , chatName : PublicChatName

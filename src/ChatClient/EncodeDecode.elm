@@ -29,6 +29,16 @@ import WebSocketFramework.Types
 messageEncoder : MessageEncoder Message
 messageEncoder message =
     case message of
+        PingReq { message } ->
+            ( Req "ping"
+            , [ ( "message", JE.string message ) ]
+            )
+
+        PongRsp { message } ->
+            ( Rsp "pong"
+            , [ ( "message", JE.string message ) ]
+            )
+
         NewChatReq { memberName } ->
             ( Req "newChat"
             , [ ( "memberName", JE.string memberName ) ]
@@ -137,7 +147,8 @@ messageDecoder reqrspAndPlist =
 
 reqPlist : DecoderPlist Message
 reqPlist =
-    [ ( "newChat", newChatReqDecoder )
+    [ ( "ping", pingReqDecoder )
+    , ( "newChat", newChatReqDecoder )
     , ( "newPublicChat", newPublicChatReqDecoder )
     , ( "joinChat", joinChatReqDecoder )
     , ( "send", sendReqDecoder )
@@ -147,11 +158,18 @@ reqPlist =
 
 rspPlist : DecoderPlist Message
 rspPlist =
-    [ ( "joinChat", joinChatRspDecoder )
+    [ ( "pong", pongRspDecoder )
+    , ( "joinChat", joinChatRspDecoder )
     , ( "receive", receiveRspDecoder )
     , ( "leave", leaveChatRspDecoder )
     , ( "error", errorRspDecoder )
     ]
+
+
+pingReqDecoder : Decoder Message
+pingReqDecoder =
+    JD.map (\message -> PingReq { message = message })
+        (JD.field "message" JD.string)
 
 
 newChatReqDecoder : Decoder Message
@@ -204,6 +222,12 @@ leaveChatReqDecoder =
     JD.map
         (\memberid -> LeaveChatReq { memberid = memberid })
         (JD.field "memberid" JD.string)
+
+
+pongRspDecoder : Decoder Message
+pongRspDecoder =
+    JD.map (\message -> PongRsp { message = message })
+        (JD.field "message" JD.string)
 
 
 joinChatRspDecoder : Decoder Message
