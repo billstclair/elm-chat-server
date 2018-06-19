@@ -214,6 +214,13 @@ messageProcessor state message =
                                         | members = memberName :: gameState.members
                                     }
                                     state.gameDict
+                            , playerDict =
+                                Dict.insert
+                                    memberid
+                                    { gameid = chatid
+                                    , player = memberName
+                                    }
+                                    state.playerDict
                           }
                         , Just <|
                             JoinChatRsp
@@ -271,15 +278,21 @@ messageProcessor state message =
                                     LE.remove info.player gameState.members
 
                                 state2 =
+                                    { state
+                                        | playerDict =
+                                            Dict.remove memberid state.playerDict
+                                    }
+
+                                state3 =
                                     if members == [] then
-                                        { state
+                                        { state2
                                             | gameDict =
                                                 Dict.remove
                                                     info.gameid
                                                     state.gameDict
                                         }
                                     else
-                                        { state
+                                        { state2
                                             | gameDict =
                                                 Dict.insert
                                                     info.gameid
@@ -289,7 +302,7 @@ messageProcessor state message =
                                                     state.gameDict
                                         }
                             in
-                            ( state2
+                            ( state3
                             , Just <|
                                 LeaveChatRsp
                                     { chatid = info.gameid

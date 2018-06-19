@@ -47,8 +47,12 @@ import Html.Attributes
 import Html.Events exposing (on, onClick, onInput, targetValue)
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
-import WebSocketFramework exposing (makeProxyServer, makeServer, send)
-import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface)
+import WebSocketFramework exposing (makeProxyServer, makeServer)
+import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface(..))
+
+
+type alias Server =
+    ServerInterface GameState Player Message Msg
 
 
 main =
@@ -63,7 +67,7 @@ main =
 type alias ChatInfo =
     { chatName : String
     , memberNames : List MemberName
-    , server : ServerInterface GameState Player Message Msg
+    , server : Server
     , chatid : GameId
     , memberids : List PlayerId
     , otherMembers : List MemberName
@@ -74,7 +78,7 @@ type alias ChatInfo =
 
 type alias Model =
     { settings : ElmChat.Settings Msg
-    , proxyServer : ServerInterface GameState Player Message Msg
+    , proxyServer : Server
     , chats : Dict GameId ChatInfo
     , currentChat : Maybe ChatInfo
     , pendingChat : Maybe ChatInfo
@@ -84,6 +88,13 @@ type alias Model =
     , gameCount : Int
     , error : Maybe String
     }
+
+
+isProxyServer : Server -> Bool
+isProxyServer server =
+    case server of
+        ServerInterface si ->
+            si.server == ""
 
 
 type Msg
@@ -96,7 +107,7 @@ type Msg
     | NewChat
     | JoinChat
     | LeaveChat PlayerId
-    | Receive (ServerInterface GameState Player Message Msg) Message
+    | Receive Server Message
 
 
 emptySettings : ElmChat.Settings Msg
@@ -150,6 +161,45 @@ updateChats model =
                 model.chats
 
 
+updateProxy : Model -> Server -> Server
+updateProxy model server =
+    if isProxyServer server then
+        server
+    else
+        model.proxyServer
+
+
+send : Server -> Model -> Message -> Cmd Msg
+send server model message =
+    let
+        s =
+            if isProxyServer server then
+                model.proxyServer
+            else
+                server
+    in
+    WebSocketFramework.send server <| log "send" message
+
+
+newChatInfo : Model -> ( ChatInfo, Server )
+newChatInfo model =
+    let
+        server =
+            model.proxyServer
+    in
+    ( { chatName = model.chatName
+      , memberNames = []
+      , server = server
+      , chatid = ""
+      , memberids = []
+      , otherMembers = []
+      , isPublic = False
+      , settings = emptySettings
+      }
+    , server
+    )
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -173,43 +223,40 @@ update msg model =
                         | currentChat = Just info
                         , settings = info.settings
                         , chats = updateChats model
+                        , chatid = info.chatid
                     }
-                        ! []
+                        ! [ ElmChat.restoreScroll info.settings ]
 
         NewChat ->
-            case model.currentChat of
-                Just _ ->
-                    { model
-                        | error = Just "Can't join multiple chats in local mode."
-                    }
-                        ! []
-
-                Nothing ->
-                    let
-                        gameCount =
-                            model.gameCount
-
-                        server =
-                            model.proxyServer
-
-                        info =
-                            { chatName = model.chatName
-                            , memberNames = [ model.memberName ]
-                            , server = server
-                            , chatid = ""
-                            , memberids = []
-                            , otherMembers = []
-                            , isPublic = False
-                            , settings = emptySettings
-                            }
-                    in
-                    { model | pendingChat = Just info }
-                        ! [ send server <|
-                                NewChatReq { memberName = model.memberName }
-                          ]
+            let
+                ( info, server ) =
+                    newChatInfo model
+            in
+            { model | pendingChat = Just info }
+                ! [ send server model <|
+                        NewChatReq { memberName = model.memberName }
+                  ]
 
         JoinChat ->
-            model ! []
+            let
+                chatid =
+                    model.chatid
+
+                ( info, server ) =
+                    case Dict.get chatid model.chats of
+                        Just chat ->
+                            ( chat, model.proxyServer )
+
+                        Nothing ->
+                            newChatInfo model
+            in
+            { model | pendingChat = Just info }
+                ! [ send server model <|
+                        JoinChatReq
+                            { chatid = chatid
+                            , memberName = model.memberName
+                            }
+                  ]
 
         LeaveChat memberid ->
             case model.currentChat of
@@ -218,7 +265,7 @@ update msg model =
 
                 Just info ->
                     model
-                        ! [ send info.server <|
+                        ! [ send info.server model <|
                                 LeaveChatReq { memberid = memberid }
                           ]
 
@@ -234,7 +281,7 @@ update msg model =
 
                 Just info ->
                     { model | settings = settings }
-                        ! [ send info.server <|
+                        ! [ send info.server model <|
                                 SendReq
                                     { memberid = memberid
                                     , message = line
@@ -242,7 +289,7 @@ update msg model =
                           ]
 
         Receive interface message ->
-            case log "message" message of
+            case log "Receive" message of
                 ReceiveRsp { chatid, memberName, message } ->
                     let
                         ( settings1, cmd ) =
@@ -251,7 +298,7 @@ update msg model =
                     in
                     ( { model
                         | settings = settings1
-                        , proxyServer = interface
+                        , proxyServer = updateProxy model interface
                         , error = Nothing
                       }
                     , cmd
@@ -273,11 +320,20 @@ update msg model =
                                     let
                                         info2 =
                                             { info
-                                                | server = log "interface" interface
+                                                | server = interface
                                                 , chatid = chatid
-                                                , memberids = [ id ]
-                                                , memberNames = [ memberName ]
-                                                , otherMembers = otherMembers
+                                                , memberids =
+                                                    id :: info.memberids
+                                                , memberNames =
+                                                    memberName :: info.memberNames
+                                                , otherMembers =
+                                                    LE.filterNot
+                                                        (\m ->
+                                                            List.member
+                                                                m
+                                                                info.memberNames
+                                                        )
+                                                        otherMembers
                                                 , isPublic = isPublic
                                             }
 
@@ -289,7 +345,7 @@ update msg model =
                                     in
                                     { model
                                         | settings = settings
-                                        , proxyServer = interface
+                                        , proxyServer = updateProxy model interface
                                         , currentChat = Just info2
                                         , pendingChat = Nothing
                                         , chats =
@@ -322,6 +378,7 @@ update msg model =
                                             Dict.insert chatid info2 model.chats
                                         , currentChat =
                                             newCurrentChat model info2
+                                        , chatid = info2.chatid
                                     }
                                         ! []
 
@@ -342,6 +399,7 @@ update msg model =
                                         { info
                                             | otherMembers =
                                                 LE.remove memberName info.otherMembers
+                                            , server = interface
                                         }
                                 in
                                 { model
@@ -349,12 +407,22 @@ update msg model =
                                         Dict.insert chatid info2 model.chats
                                     , currentChat =
                                         newCurrentChat model info2
+                                    , chatid = info2.chatid
+                                    , proxyServer = updateProxy model interface
                                 }
                                     ! []
                             else
                                 let
                                     members =
                                         LE.remove memberName info.memberNames
+
+                                    ids =
+                                        case LE.elemIndex memberName info.memberNames of
+                                            Nothing ->
+                                                info.memberids
+
+                                            Just idx ->
+                                                LE.removeAt idx info.memberids
 
                                     ( chats, current, settings ) =
                                         if members == [] then
@@ -375,11 +443,19 @@ update msg model =
                                                     chat.settings
                                             )
                                         else
+                                            let
+                                                chat =
+                                                    { info
+                                                        | memberNames = members
+                                                        , memberids = ids
+                                                        , server = interface
+                                                    }
+                                            in
                                             ( Dict.insert
                                                 chatid
-                                                { info | memberNames = members }
+                                                chat
                                                 model.chats
-                                            , model.currentChat
+                                            , newCurrentChat model chat
                                             , model.settings
                                             )
                                 in
@@ -387,12 +463,23 @@ update msg model =
                                     | currentChat = current
                                     , chats = chats
                                     , settings = settings
-                                    , proxyServer = interface
+                                    , proxyServer = updateProxy model interface
+                                    , chatid =
+                                        case current of
+                                            Just info ->
+                                                info.chatid
+
+                                            Nothing ->
+                                                model.chatid
                                 }
                                     ! []
 
                 _ ->
-                    { model | error = Just <| toString message } ! []
+                    { model
+                        | error = Just <| toString message
+                        , pendingChat = Nothing
+                    }
+                        ! []
 
 
 b : String -> Html Msg
