@@ -56,25 +56,79 @@ getPublicGame chatid state =
             Nothing
 
 
+dummyMemberid : PlayerId
+dummyMemberid =
+    "<memberid>"
+
+
+{-| This is a ServerMessageProcessor GameState Player Message
+-}
 messageProcessor : ServerState GameState Player -> Message -> ( ServerState GameState Player, Maybe Message )
 messageProcessor state message =
     case message of
+        PingReq { message } ->
+            ( state, Just <| PongRsp { message = message } )
+
         NewChatReq { memberName } ->
             ( { state
                 | gameDict =
-                    Dict.insert dummyGameid { members = [] } state.gameDict
+                    Dict.insert
+                        dummyGameid
+                        { members = [ memberName ] }
+                        state.gameDict
+                , playerDict =
+                    Dict.insert
+                        dummyMemberid
+                        { gameid = dummyGameid
+                        , player = memberName
+                        }
+                        state.playerDict
               }
             , Just <|
                 JoinChatRsp
                     -- chatid and memberid filled in by server code
                     -- can't do it here, because we have no random seed available.
                     { chatid = dummyGameid
-                    , memberid = Nothing
+                    , memberid = Just dummyMemberid
                     , memberName = memberName
                     , otherMembers = []
                     , isPublic = False
                     }
             )
+
+        NewPublicChatReq { memberName, chatName } ->
+            case Dict.get chatName state.gameDict of
+                Just _ ->
+                    ( state
+                    , Just <|
+                        ErrorRsp
+                            { chatid = chatName
+                            , message = "There is already a game with that name."
+                            }
+                    )
+
+                Nothing ->
+                    ( { state
+                        | gameDict =
+                            Dict.insert
+                                chatName
+                                { members = [ memberName ] }
+                                state.gameDict
+                        , publicGames =
+                            { gameid = chatName
+                            , playerName = memberName
+                            }
+                                :: state.publicGames
+                      }
+                    , Just <|
+                        JoinChatRsp
+                            { chatid = chatName
+                            , memberid = Nothing
+                            , memberName = memberName
+                            , otherMembers = []
+                            , isPublic = True
+                            }
+                    )
 
         JoinChatReq { chatid, memberName } ->
             case Dict.get chatid state.gameDict of

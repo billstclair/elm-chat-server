@@ -17,9 +17,11 @@ import Dict
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
 import WebSocketFramework exposing (decodePlist, unknownMessage)
+import WebSocketFramework.EncodeDecode exposing (genericMessageDecoder)
 import WebSocketFramework.Types
     exposing
-        ( MessageDecoder
+        ( DecoderPlist
+        , MessageDecoder
         , MessageEncoder
         , Plist
         , ReqRsp(..)
