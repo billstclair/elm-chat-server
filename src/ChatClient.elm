@@ -62,10 +62,10 @@ main =
 
 type alias ChatInfo =
     { chatName : String
-    , memberName : MemberName
+    , memberNames : List MemberName
     , server : ServerInterface GameState Player Message Msg
     , chatid : GameId
-    , memberid : PlayerId
+    , memberids : List PlayerId
     , otherMembers : List MemberName
     , isPublic : Bool
     , settings : ElmChat.Settings Msg
@@ -86,14 +86,14 @@ type alias Model =
 
 type Msg
     = ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
-    | ChatSend String (ElmChat.Settings Msg)
+    | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
     | SetChatName String
     | SetChatid String
     | ChangeChat String
     | NewChat
     | JoinChat
-    | LeaveChat
+    | LeaveChat PlayerId
     | Receive (ServerInterface GameState Player Message Msg) Message
 
 
@@ -187,10 +187,10 @@ update msg model =
 
                         info =
                             { chatName = model.chatName
-                            , memberName = model.memberName
+                            , memberNames = [ model.memberName ]
                             , server = server
                             , chatid = ""
-                            , memberid = ""
+                            , memberids = []
                             , otherMembers = []
                             , isPublic = False
                             , settings = emptySettings
@@ -204,7 +204,7 @@ update msg model =
         JoinChat ->
             model ! []
 
-        LeaveChat ->
+        LeaveChat memberid ->
             case model.currentChat of
                 Nothing ->
                     model ! []
@@ -212,7 +212,7 @@ update msg model =
                 Just info ->
                     model
                         ! [ send info.server <|
-                                LeaveChatReq { memberid = info.memberid }
+                                LeaveChatReq { memberid = memberid }
                           ]
 
         ChatUpdate settings cmd ->
@@ -220,7 +220,7 @@ update msg model =
             , cmd
             )
 
-        ChatSend line settings ->
+        ChatSend memberid line settings ->
             case model.currentChat of
                 Nothing ->
                     model ! []
@@ -229,7 +229,7 @@ update msg model =
                     { model | settings = settings }
                         ! [ send info.server <|
                                 SendReq
-                                    { memberid = info.memberid
+                                    { memberid = memberid
                                     , message = line
                                     }
                           ]
@@ -252,7 +252,7 @@ update msg model =
                 JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
                     case memberid of
                         Just id ->
-                            -- It's a new chat
+                            -- It's a new chat, or a second member
                             case model.pendingChat of
                                 Nothing ->
                                     { model
@@ -267,8 +267,8 @@ update msg model =
                                             { info
                                                 | server = interface
                                                 , chatid = chatid
-                                                , memberid = id
-                                                , memberName = memberName
+                                                , memberids = [ id ]
+                                                , memberNames = [ memberName ]
                                                 , otherMembers = otherMembers
                                                 , isPublic = isPublic
                                             }
@@ -285,6 +285,7 @@ update msg model =
                                         , pendingChat = Nothing
                                         , chats =
                                             Dict.insert chatid info2 chats
+                                        , chatid = chatid
                                         , error = Nothing
                                     }
                                         ! []
@@ -325,7 +326,7 @@ update msg model =
                                 ! []
 
                         Just info ->
-                            if memberName /= info.memberName then
+                            if not <| List.member memberName info.memberNames then
                                 -- Another member left
                                 let
                                     info2 =
@@ -342,35 +343,43 @@ update msg model =
                                 }
                                     ! []
                             else
-                                -- We're leaving
-                                case Dict.get chatid model.chats of
-                                    Nothing ->
-                                        { model
-                                            | error =
-                                                Just "Got LeaveChatRsp for unknown chat."
-                                        }
-                                            ! []
+                                let
+                                    members =
+                                        LE.remove memberName info.memberNames
 
-                                    Just info ->
-                                        let
-                                            chats =
-                                                Dict.remove chatid model.chats
+                                    ( chats, current, settings ) =
+                                        if members == [] then
+                                            let
+                                                chats =
+                                                    Dict.remove chatid model.chats
 
-                                            current =
-                                                List.head <| Dict.values chats
-                                        in
-                                        { model
-                                            | currentChat = current
-                                            , chats = chats
-                                            , settings =
-                                                case current of
-                                                    Nothing ->
-                                                        emptySettings
+                                                current =
+                                                    List.head <| Dict.values chats
+                                            in
+                                            ( chats
+                                            , current
+                                            , case current of
+                                                Nothing ->
+                                                    emptySettings
 
-                                                    Just chat ->
-                                                        chat.settings
-                                        }
-                                            ! []
+                                                Just chat ->
+                                                    chat.settings
+                                            )
+                                        else
+                                            ( Dict.insert
+                                                chatid
+                                                { info | memberNames = members }
+                                                model.chats
+                                            , model.currentChat
+                                            , model.settings
+                                            )
+                                in
+                                { model
+                                    | currentChat = current
+                                    , chats = chats
+                                    , settings = settings
+                                }
+                                    ! []
 
                 _ ->
                     { model | error = Just <| toString message } ! []
@@ -445,46 +454,74 @@ currentChatRows model =
             []
 
         Just info ->
-            [ tr
-                [ th <| info.memberName ++ ": "
+            List.concat
+                [ inputRows model info
+                , [ tr
+                        [ th "Chat: "
+                        , td [ chatSelector model info ]
+                        , case info.memberids of
+                            [ id ] ->
+                                td
+                                    [ button [ onClick <| LeaveChat id ]
+                                        [ text "Leave" ]
+                                    ]
+
+                            _ ->
+                                text ""
+                        ]
+                  , tr
+                        [ th "ID: "
+                        , td
+                            [ input
+                                [ type_ "text"
+                                , value info.chatid
+                                , size 40
+                                , disabled True
+                                ]
+                                []
+                            ]
+                        ]
+                  , case info.otherMembers of
+                        [] ->
+                            text ""
+
+                        members ->
+                            tr
+                                [ th "Members:"
+                                , td [ text <| String.join ", " members ]
+                                ]
+                  ]
+                ]
+
+
+inputRows : Model -> ChatInfo -> List (Html Msg)
+inputRows model info =
+    let
+        onlyone =
+            Just [] == List.tail info.memberNames
+    in
+    List.map2
+        (\id name ->
+            tr
+                [ th <| name ++ ": "
                 , Html.td [ colspan 2 ]
                     [ ElmChat.inputBox
                         40
                         "Send"
-                        ChatSend
+                        (ChatSend id)
                         model.settings
                     ]
-                ]
-            , tr
-                [ th "Chat: "
-                , td [ chatSelector model info ]
-                , td
-                    [ button [ onClick LeaveChat ]
-                        [ text "Leave" ]
-                    ]
-                ]
-            , tr
-                [ th "ID: "
-                , td
-                    [ input
-                        [ type_ "text"
-                        , value info.chatid
-                        , size 40
-                        , disabled True
-                        ]
-                        []
-                    ]
-                ]
-            , case info.otherMembers of
-                [] ->
+                , if onlyone then
                     text ""
-
-                members ->
-                    tr
-                        [ th "Members:"
-                        , td [ text <| String.join ", " members ]
+                  else
+                    td
+                        [ button [ onClick <| LeaveChat id ]
+                            [ text "Leave" ]
                         ]
-            ]
+                ]
+        )
+        info.memberids
+        info.memberNames
 
 
 onChange : (String -> msg) -> Attribute msg
@@ -544,7 +581,7 @@ newChatRows model =
             ]
         , td
             [ button [ onClick NewChat ]
-                [ text "New Chat" ]
+                [ text "New" ]
             ]
         ]
     , tr
@@ -560,7 +597,7 @@ newChatRows model =
             ]
         , td
             [ button [ onClick JoinChat ]
-                [ text "Join Chat" ]
+                [ text "Join" ]
             ]
         ]
     ]
