@@ -292,16 +292,59 @@ update msg model =
             case log "Receive" message of
                 ReceiveRsp { chatid, memberName, message } ->
                     let
+                        ( settings, isVisible, chat, updateChats ) =
+                            case model.currentChat of
+                                Nothing ->
+                                    let
+                                        ( chat, _ ) =
+                                            newChatInfo model
+                                    in
+                                    ( emptySettings, False, chat, False )
+
+                                Just chat ->
+                                    if chat.chatid == chatid then
+                                        ( model.settings, True, chat, False )
+                                    else
+                                        case Dict.get chatid model.chats of
+                                            Nothing ->
+                                                ( emptySettings
+                                                , False
+                                                , chat
+                                                , False
+                                                )
+
+                                            Just invchat ->
+                                                ( invchat.settings
+                                                , False
+                                                , invchat
+                                                , True
+                                                )
+
                         ( settings1, cmd ) =
                             ElmChat.addChat model.settings
                                 (memberName ++ ": " ++ message)
                     in
                     ( { model
-                        | settings = settings1
+                        | settings =
+                            if isVisible then
+                                settings1
+                            else
+                                model.settings
+                        , chats =
+                            if not updateChats then
+                                model.chats
+                            else
+                                Dict.insert
+                                    chatid
+                                    { chat | settings = settings1 }
+                                    model.chats
                         , proxyServer = updateProxy model interface
                         , error = Nothing
                       }
-                    , cmd
+                    , if isVisible then
+                        cmd
+                      else
+                        Cmd.none
                     )
 
                 JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
@@ -338,7 +381,15 @@ update msg model =
                                             }
 
                                         settings =
-                                            info2.settings
+                                            case model.currentChat of
+                                                Nothing ->
+                                                    info2.settings
+
+                                                Just chat ->
+                                                    if chat.chatid == chatid then
+                                                        model.settings
+                                                    else
+                                                        info2.settings
 
                                         chats =
                                             updateChats model
