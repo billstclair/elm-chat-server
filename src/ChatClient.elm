@@ -74,12 +74,14 @@ type alias ChatInfo =
 
 type alias Model =
     { settings : ElmChat.Settings Msg
+    , proxyServer : ServerInterface GameState Player Message Msg
     , chats : Dict GameId ChatInfo
     , currentChat : Maybe ChatInfo
     , pendingChat : Maybe ChatInfo
     , memberName : String
     , chatName : String
     , chatid : String
+    , gameCount : Int
     , error : Maybe String
     }
 
@@ -105,12 +107,14 @@ emptySettings =
 init : ( Model, Cmd Msg )
 init =
     ( { settings = emptySettings
+      , proxyServer = makeProxyServer messageProcessor Receive
       , chats = Dict.empty
       , currentChat = Nothing
       , pendingChat = Nothing
       , memberName = "Nobody"
       , chatName = "chat"
       , chatid = ""
+      , gameCount = 0
       , error = Nothing
       }
     , Cmd.none
@@ -182,8 +186,11 @@ update msg model =
 
                 Nothing ->
                     let
+                        gameCount =
+                            model.gameCount
+
                         server =
-                            makeProxyServer messageProcessor Receive
+                            model.proxyServer
 
                         info =
                             { chatName = model.chatName
@@ -244,6 +251,7 @@ update msg model =
                     in
                     ( { model
                         | settings = settings1
+                        , proxyServer = interface
                         , error = Nothing
                       }
                     , cmd
@@ -265,7 +273,7 @@ update msg model =
                                     let
                                         info2 =
                                             { info
-                                                | server = interface
+                                                | server = log "interface" interface
                                                 , chatid = chatid
                                                 , memberids = [ id ]
                                                 , memberNames = [ memberName ]
@@ -274,13 +282,14 @@ update msg model =
                                             }
 
                                         settings =
-                                            info.settings
+                                            info2.settings
 
                                         chats =
                                             updateChats model
                                     in
                                     { model
                                         | settings = settings
+                                        , proxyServer = interface
                                         , currentChat = Just info2
                                         , pendingChat = Nothing
                                         , chats =
@@ -378,6 +387,7 @@ update msg model =
                                     | currentChat = current
                                     , chats = chats
                                     , settings = settings
+                                    , proxyServer = interface
                                 }
                                     ! []
 

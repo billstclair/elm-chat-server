@@ -70,16 +70,46 @@ messageProcessor state message =
             ( state, Just <| PongRsp { message = message } )
 
         NewChatReq { memberName } ->
-            ( { state
+            let
+                serverState =
+                    case state.state of
+                        Nothing ->
+                            { members = []
+                            , memberCount = 0
+                            , gameCount = 0
+                            }
+
+                        Just ss ->
+                            ss
+
+                gameCount =
+                    serverState.gameCount + 1
+
+                gameid =
+                    toString gameCount
+
+                playerid =
+                    "P1"
+
+                state2 =
+                    { state
+                        | state =
+                            Just { serverState | gameCount = gameCount }
+                    }
+            in
+            ( { state2
                 | gameDict =
                     Dict.insert
-                        dummyGameid
-                        { members = [ memberName ] }
+                        gameid
+                        { members = [ memberName ]
+                        , memberCount = 1
+                        , gameCount = 0 -- This isn't used for individual games.
+                        }
                         state.gameDict
                 , playerDict =
                     Dict.insert
-                        dummyMemberid
-                        { gameid = dummyGameid
+                        playerid
+                        { gameid = gameid
                         , player = memberName
                         }
                         state.playerDict
@@ -88,8 +118,8 @@ messageProcessor state message =
                 JoinChatRsp
                     -- chatid and memberid filled in by server code
                     -- can't do it here, because we have no random seed available.
-                    { chatid = dummyGameid
-                    , memberid = Just dummyMemberid
+                    { chatid = gameid
+                    , memberid = Just playerid
                     , memberName = memberName
                     , otherMembers = []
                     , isPublic = False
@@ -97,6 +127,10 @@ messageProcessor state message =
             )
 
         NewPublicChatReq { memberName, chatName } ->
+            let
+                playerid =
+                    "P1"
+            in
             case Dict.get chatName state.gameDict of
                 Just _ ->
                     ( state
@@ -112,18 +146,28 @@ messageProcessor state message =
                         | gameDict =
                             Dict.insert
                                 chatName
-                                { members = [ memberName ] }
+                                { members = [ memberName ]
+                                , memberCount = 1
+                                , gameCount = 0
+                                }
                                 state.gameDict
                         , publicGames =
                             { gameid = chatName
                             , playerName = memberName
                             }
                                 :: state.publicGames
+                        , playerDict =
+                            Dict.insert
+                                playerid
+                                { gameid = chatName
+                                , player = memberName
+                                }
+                                state.playerDict
                       }
                     , Just <|
                         JoinChatRsp
                             { chatid = chatName
-                            , memberid = Nothing
+                            , memberid = Just playerid
                             , memberName = memberName
                             , otherMembers = []
                             , isPublic = True
@@ -151,10 +195,22 @@ messageProcessor state message =
                                 }
                         )
                     else
+                        let
+                            memberCount =
+                                gameState.memberCount + 1
+
+                            memberid =
+                                "P" ++ toString memberCount
+
+                            gs2 =
+                                { gameState
+                                    | memberCount = memberCount
+                                }
+                        in
                         ( { state
                             | gameDict =
                                 Dict.insert chatid
-                                    { gameState
+                                    { gs2
                                         | members = memberName :: gameState.members
                                     }
                                     state.gameDict
@@ -162,7 +218,7 @@ messageProcessor state message =
                         , Just <|
                             JoinChatRsp
                                 { chatid = chatid
-                                , memberid = Nothing
+                                , memberid = Just memberid
                                 , memberName = memberName
                                 , otherMembers = gameState.members
                                 , isPublic = Nothing /= getPublicGame chatid state
