@@ -16,6 +16,7 @@ import Char
 import ChatClient.Interface exposing (messageProcessor)
 import ChatClient.Types exposing (GameState, MemberName, Message(..), Player)
 import Debug exposing (log)
+import Dict exposing (Dict)
 import ElmChat
 import Html
     exposing
@@ -28,13 +29,11 @@ import Html
         , input
         , p
         , table
-        , td
         , text
-        , th
-        , tr
         )
-import Html.Attributes exposing (disabled, href, size, style, type_, value)
+import Html.Attributes exposing (colspan, disabled, href, size, style, type_, value)
 import Html.Events exposing (onClick, onInput)
+import List.Extra as LE
 import WebSocketFramework exposing (makeProxyServer, makeServer, send)
 import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface)
 
@@ -51,17 +50,18 @@ main =
 type alias ChatInfo =
     { chatName : String
     , memberName : MemberName
-    , serverInterface : ServerInterface GameState Player Message Msg
+    , server : ServerInterface GameState Player Message Msg
     , chatid : GameId
     , memberid : PlayerId
     , otherMembers : List MemberName
     , isPublic : Bool
+    , settings : ElmChat.Settings Msg
     }
 
 
 type alias Model =
     { settings : ElmChat.Settings Msg
-    , chats : List ChatInfo
+    , chats : Dict GameId ChatInfo
     , currentChat : Maybe ChatInfo
     , pendingChat : Maybe ChatInfo
     , memberName : String
@@ -79,13 +79,19 @@ type Msg
     | SetChatid String
     | NewChat
     | JoinChat
+    | LeaveChat
     | Receive (ServerInterface GameState Player Message Msg) Message
+
+
+emptySettings : ElmChat.Settings Msg
+emptySettings =
+    ElmChat.makeSettings "id1" 14 True ChatUpdate
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( { settings = ElmChat.makeSettings "id1" 14 True ChatUpdate
-      , chats = []
+    ( { settings = emptySettings
+      , chats = Dict.empty
       , currentChat = Nothing
       , pendingChat = Nothing
       , memberName = "Nobody"
@@ -95,6 +101,19 @@ init =
       }
     , Cmd.none
     )
+
+
+newCurrentChat : Model -> ChatInfo -> Maybe ChatInfo
+newCurrentChat model info =
+    case model.currentChat of
+        Nothing ->
+            Nothing
+
+        Just chat ->
+            if chat.chatid == info.chatid then
+                Just info
+            else
+                model.currentChat
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -125,11 +144,12 @@ update msg model =
                         info =
                             { chatName = model.chatName
                             , memberName = model.memberName
-                            , serverInterface = server
+                            , server = server
                             , chatid = ""
                             , memberid = ""
                             , otherMembers = []
                             , isPublic = False
+                            , settings = emptySettings
                             }
                     in
                     { model | pendingChat = Just info }
@@ -139,6 +159,17 @@ update msg model =
 
         JoinChat ->
             model ! []
+
+        LeaveChat ->
+            case model.currentChat of
+                Nothing ->
+                    model ! []
+
+                Just info ->
+                    model
+                        ! [ send info.server <|
+                                LeaveChatReq { memberid = info.memberid }
+                          ]
 
         ChatUpdate settings cmd ->
             ( { model | settings = settings }
@@ -152,7 +183,7 @@ update msg model =
 
                 Just info ->
                     { model | settings = settings }
-                        ! [ send info.serverInterface <|
+                        ! [ send info.server <|
                                 SendReq
                                     { memberid = info.memberid
                                     , message = line
@@ -175,40 +206,138 @@ update msg model =
                     )
 
                 JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
-                    case model.pendingChat of
-                        Nothing ->
-                            { model
-                                | error =
-                                    Just "Got a join response with no pending request."
-                            }
-                                ! []
+                    case memberid of
+                        Just id ->
+                            -- It's a new chat
+                            case model.pendingChat of
+                                Nothing ->
+                                    { model
+                                        | error =
+                                            Just "Got a join response with no pending request."
+                                    }
+                                        ! []
 
-                        Just info ->
-                            case memberid of
-                                Just id ->
-                                    -- It's a new chat
+                                Just info ->
                                     let
                                         info2 =
                                             { info
-                                                | serverInterface = interface
+                                                | server = interface
                                                 , chatid = chatid
                                                 , memberid = id
                                                 , memberName = memberName
                                                 , otherMembers = otherMembers
                                                 , isPublic = isPublic
                                             }
+
+                                        settings =
+                                            info.settings
+
+                                        chats =
+                                            case model.currentChat of
+                                                Nothing ->
+                                                    model.chats
+
+                                                Just chat ->
+                                                    Dict.insert
+                                                        chat.chatid
+                                                        { chat
+                                                            | settings =
+                                                                model.settings
+                                                        }
+                                                        model.chats
                                     in
                                     { model
-                                        | currentChat = Just info2
+                                        | settings = settings
+                                        , currentChat = Just info2
                                         , pendingChat = Nothing
-                                        , chats = info2 :: model.chats
+                                        , chats =
+                                            Dict.insert chatid info2 chats
                                         , error = Nothing
                                     }
                                         ! []
 
+                        Nothing ->
+                            -- New member for existing chat
+                            case Dict.get chatid model.chats of
                                 Nothing ->
-                                    -- New member for existing chat
-                                    model ! []
+                                    { model
+                                        | error =
+                                            Just "JoinChatRsp for unknown chat."
+                                    }
+                                        ! []
+
+                                Just info ->
+                                    let
+                                        info2 =
+                                            { info
+                                                | otherMembers =
+                                                    memberName :: info.otherMembers
+                                            }
+                                    in
+                                    { model
+                                        | chats =
+                                            Dict.insert chatid info2 model.chats
+                                        , currentChat =
+                                            newCurrentChat model info2
+                                    }
+                                        ! []
+
+                LeaveChatRsp { chatid, memberName } ->
+                    case Dict.get chatid model.chats of
+                        Nothing ->
+                            { model
+                                | error =
+                                    Just "LeaveChatRsp received for unknown chat."
+                            }
+                                ! []
+
+                        Just info ->
+                            if memberName /= info.memberName then
+                                -- Another member left
+                                let
+                                    info2 =
+                                        { info
+                                            | otherMembers =
+                                                LE.remove memberName info.otherMembers
+                                        }
+                                in
+                                { model
+                                    | chats =
+                                        Dict.insert chatid info2 model.chats
+                                    , currentChat =
+                                        newCurrentChat model info2
+                                }
+                                    ! []
+                            else
+                                -- We're leaving
+                                case Dict.get chatid model.chats of
+                                    Nothing ->
+                                        { model
+                                            | error =
+                                                Just "Got LeaveChatRsp for unknown chat."
+                                        }
+                                            ! []
+
+                                    Just info ->
+                                        let
+                                            chats =
+                                                Dict.remove chatid model.chats
+
+                                            current =
+                                                List.head <| Dict.values chats
+                                        in
+                                        { model
+                                            | currentChat = current
+                                            , chats = chats
+                                            , settings =
+                                                case current of
+                                                    Nothing ->
+                                                        emptySettings
+
+                                                    Just chat ->
+                                                        chat.settings
+                                        }
+                                            ! []
 
                 _ ->
                     { model | error = Just <| toString message } ! []
@@ -224,58 +353,23 @@ center attributes body =
     Html.node "center" attributes body
 
 
+styles : String -> Html Msg
+styles css =
+    Html.node "style" [] [ text css ]
+
+
 view : Model -> Html Msg
 view model =
     center []
-        [ h2 [] [ text "Elm Chat" ]
+        [ styles "th { text-align: right }"
+        , h2 [] [ text "Elm Chat" ]
         , p [] [ ElmChat.chat model.settings ]
-        , case model.currentChat of
-            Nothing ->
-                text ""
-
-            Just info ->
-                p []
-                    [ b (info.memberName ++ ": ")
-                    , ElmChat.inputBox
-                        40
-                        "Send"
-                        ChatSend
-                        model.settings
-                    ]
-        , p []
-            [ b "Name: "
-            , input
-                [ type_ "text"
-                , value model.memberName
-                , onInput SetMemberName
-                , size 40
+        , table [] <|
+            List.concat
+                [ currentChatRows model
+                , [ tr [ td [ br ] ] ]
+                , newChatRows model
                 ]
-                []
-            , br
-            , b "Chat Name: "
-            , input
-                [ type_ "text"
-                , value model.chatName
-                , onInput SetChatName
-                , size 40
-                ]
-                []
-            , text " "
-            , button [ onClick NewChat ]
-                [ text "New Chat" ]
-            , br
-            , b "Chat ID: "
-            , input
-                [ type_ "text"
-                , value model.chatid
-                , onInput SetChatid
-                , size 40
-                ]
-                []
-            , text " "
-            , button [ onClick JoinChat ]
-                [ text "Join Chat" ]
-            ]
         , p [ style [ ( "color", "red" ) ] ]
             [ case model.error of
                 Nothing ->
@@ -294,6 +388,111 @@ view model =
                 [ text "GitHub" ]
             ]
         ]
+
+
+tr : List (Html Msg) -> Html Msg
+tr body =
+    Html.tr [] body
+
+
+th : String -> Html Msg
+th string =
+    Html.th [] [ text string ]
+
+
+td : List (Html Msg) -> Html Msg
+td body =
+    Html.td [] body
+
+
+currentChatRows : Model -> List (Html Msg)
+currentChatRows model =
+    case model.currentChat of
+        Nothing ->
+            []
+
+        Just info ->
+            [ tr
+                [ th <| info.memberName ++ ": "
+                , Html.td [ colspan 2 ]
+                    [ ElmChat.inputBox
+                        40
+                        "Send"
+                        ChatSend
+                        model.settings
+                    ]
+                ]
+            , tr
+                [ th "Chat: "
+                , td [ text info.chatName ]
+                , td
+                    [ button [ onClick LeaveChat ]
+                        [ text "Leave" ]
+                    ]
+                ]
+            , tr
+                [ th "ID: "
+                , td [ text info.chatid ]
+                ]
+            , case info.otherMembers of
+                [] ->
+                    text ""
+
+                members ->
+                    tr
+                        [ th "Members:"
+                        , td [ text <| String.join ", " members ]
+                        ]
+            ]
+
+
+newChatRows : Model -> List (Html Msg)
+newChatRows model =
+    [ tr
+        [ th "Name: "
+        , td
+            [ input
+                [ type_ "text"
+                , value model.memberName
+                , onInput SetMemberName
+                , size 40
+                ]
+                []
+            ]
+        ]
+    , tr
+        [ th "Chat Name: "
+        , td
+            [ input
+                [ type_ "text"
+                , value model.chatName
+                , onInput SetChatName
+                , size 40
+                ]
+                []
+            ]
+        , td
+            [ button [ onClick NewChat ]
+                [ text "New Chat" ]
+            ]
+        ]
+    , tr
+        [ th "Chat ID: "
+        , td
+            [ input
+                [ type_ "text"
+                , value model.chatid
+                , onInput SetChatid
+                , size 40
+                ]
+                []
+            ]
+        , td
+            [ button [ onClick JoinChat ]
+                [ text "Join Chat" ]
+            ]
+        ]
+    ]
 
 
 br : Html Msg
