@@ -27,12 +27,25 @@ import Html
         , div
         , h2
         , input
+        , option
         , p
+        , select
         , table
         , text
         )
-import Html.Attributes exposing (colspan, disabled, href, size, style, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html.Attributes
+    exposing
+        ( colspan
+        , disabled
+        , href
+        , selected
+        , size
+        , style
+        , type_
+        , value
+        )
+import Html.Events exposing (on, onClick, onInput, targetValue)
+import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
 import WebSocketFramework exposing (makeProxyServer, makeServer, send)
 import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface)
@@ -77,6 +90,7 @@ type Msg
     | SetMemberName String
     | SetChatName String
     | SetChatid String
+    | ChangeChat String
     | NewChat
     | JoinChat
     | LeaveChat
@@ -116,6 +130,22 @@ newCurrentChat model info =
                 model.currentChat
 
 
+updateChats : Model -> Dict GameId ChatInfo
+updateChats model =
+    case model.currentChat of
+        Nothing ->
+            model.chats
+
+        Just chat ->
+            Dict.insert
+                chat.chatid
+                { chat
+                    | settings =
+                        model.settings
+                }
+                model.chats
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -127,6 +157,20 @@ update msg model =
 
         SetChatid id ->
             { model | chatid = id } ! []
+
+        ChangeChat chatid ->
+            case Dict.get chatid model.chats of
+                Nothing ->
+                    -- Can't happen
+                    model ! []
+
+                Just info ->
+                    { model
+                        | currentChat = Just info
+                        , settings = info.settings
+                        , chats = updateChats model
+                    }
+                        ! []
 
         NewChat ->
             case model.currentChat of
@@ -233,18 +277,7 @@ update msg model =
                                             info.settings
 
                                         chats =
-                                            case model.currentChat of
-                                                Nothing ->
-                                                    model.chats
-
-                                                Just chat ->
-                                                    Dict.insert
-                                                        chat.chatid
-                                                        { chat
-                                                            | settings =
-                                                                model.settings
-                                                        }
-                                                        model.chats
+                                            updateChats model
                                     in
                                     { model
                                         | settings = settings
@@ -424,7 +457,7 @@ currentChatRows model =
                 ]
             , tr
                 [ th "Chat: "
-                , td [ text info.chatName ]
+                , td [ chatSelector model info ]
                 , td
                     [ button [ onClick LeaveChat ]
                         [ text "Leave" ]
@@ -432,7 +465,15 @@ currentChatRows model =
                 ]
             , tr
                 [ th "ID: "
-                , td [ text info.chatid ]
+                , td
+                    [ input
+                        [ type_ "text"
+                        , value info.chatid
+                        , size 40
+                        , disabled True
+                        ]
+                        []
+                    ]
                 ]
             , case info.otherMembers of
                 [] ->
@@ -444,6 +485,36 @@ currentChatRows model =
                         , td [ text <| String.join ", " members ]
                         ]
             ]
+
+
+onChange : (String -> msg) -> Attribute msg
+onChange msg =
+    on "change" (JD.map msg targetValue)
+
+
+chatSelector : Model -> ChatInfo -> Html Msg
+chatSelector model info =
+    let
+        chats =
+            Dict.values model.chats
+
+        chatid =
+            info.chatid
+    in
+    select
+        [ style [ ( "width", "100%" ) ]
+        , onChange ChangeChat
+        ]
+    <|
+        List.map
+            (\chat ->
+                option
+                    [ selected <| chatid == chat.chatid
+                    , value chat.chatid
+                    ]
+                    [ text chat.chatName ]
+            )
+            chats
 
 
 newChatRows : Model -> List (Html Msg)
