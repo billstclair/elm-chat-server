@@ -42,26 +42,26 @@ messageEncoder message =
             )
 
         NewChatReq { memberName } ->
-            ( Req "newChat"
+            ( Req "new"
             , [ ( "memberName", JE.string memberName ) ]
             )
 
         NewPublicChatReq { memberName, chatName } ->
-            ( Req "newPublicChat"
+            ( Req "newPublic"
             , [ ( "memberName", JE.string memberName )
               , ( "chatName", JE.string chatName )
               ]
             )
 
         JoinChatReq { chatid, memberName } ->
-            ( Req "joinChat"
+            ( Req "join"
             , [ ( "chatid", JE.string chatid )
               , ( "memberName", JE.string memberName )
               ]
             )
 
         JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
-            ( Rsp "joinChat"
+            ( Rsp "join"
             , [ ( "chatid", JE.string chatid )
               , ( "memberid"
                 , case memberid of
@@ -122,9 +122,9 @@ messageDecoder reqrspAndPlist =
 reqPlist : DecoderPlist Message
 reqPlist =
     [ ( "ping", pingReqDecoder )
-    , ( "newChat", newChatReqDecoder )
-    , ( "newPublicChat", newPublicChatReqDecoder )
-    , ( "joinChat", joinChatReqDecoder )
+    , ( "new", newChatReqDecoder )
+    , ( "newPublic", newPublicChatReqDecoder )
+    , ( "join", joinChatReqDecoder )
     , ( "send", sendReqDecoder )
     , ( "leave", leaveChatReqDecoder )
     ]
@@ -133,7 +133,7 @@ reqPlist =
 rspPlist : DecoderPlist Message
 rspPlist =
     [ ( "pong", pongRspDecoder )
-    , ( "joinChat", joinChatRspDecoder )
+    , ( "join", joinChatRspDecoder )
     , ( "receive", receiveRspDecoder )
     , ( "leave", leaveChatRspDecoder )
     , ( "error", errorRspDecoder )

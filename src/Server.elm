@@ -1,3 +1,19 @@
+----------------------------------------------------------------------
+--
+-- Server.elm
+-- The top-level file for the ChatClient server.
+-- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
+-- Some rights reserved.
+-- Distributed under the MIT License
+-- See LICENSE.txt
+--
+-- Note: This file will NOT compile against the elm-package.json in
+-- the top-level directory. It WILL compile against the elm-package.json
+-- in the `server` directory.
+--
+----------------------------------------------------------------------
+
+
 port module Server exposing (..)
 
 import ChatClient.EncodeDecode
@@ -12,13 +28,16 @@ import ChatClient.Types
         , Message(..)
         , Player
         )
+import Dict
+import List.Extra as LE
 import WebSocketFramework.Server
     exposing
         ( Msg
         , ServerMessageSender
+        , Socket
         , UserFunctions
-        , WrappedModel
-        , program
+        , WrappedModel(..)
+        , sendToMany
         , sendToOne
         )
 import WebSocketFramework.Types
@@ -27,6 +46,7 @@ import WebSocketFramework.Types
         , GameId
         , InputPort
         , OutputPort
+        , PlayerId
         , ServerState
         )
 
@@ -48,20 +68,90 @@ encodeDecode =
     }
 
 
+otherSockets : GameId -> Socket -> Model -> List Socket
+otherSockets gameid socket model =
+    case Dict.get gameid model.socketsDict of
+        Nothing ->
+            []
+
+        Just sockets ->
+            LE.remove socket sockets
+
+
+type alias Model =
+    WebSocketFramework.Server.Model ServerModel Message GameState Player
+
+
+{-| TODO
+-}
+newGameAndPlayerIds : Model -> GameId -> Maybe PlayerId -> ( Model, GameId, Maybe PlayerId )
+newGameAndPlayerIds model chatid memberid =
+    ( model, chatid, memberid )
+
+
+{-| TODO
+-}
+newPlayerId : Model -> GameId -> Maybe PlayerId -> ( Model, GameId, Maybe PlayerId )
+newPlayerId model chatid memberid =
+    ( model, chatid, memberid )
+
+
 messageSender : ServerMessageSender ServerModel Message GameState Player
-messageSender model socket state request response =
-    ( model, sendToOne messageEncoder response outputPort socket )
+messageSender wrappedModel socket state request response =
+    let
+        (WrappedModel model) =
+            wrappedModel
+    in
+    case response of
+        JoinChatRsp joinrsp ->
+            let
+                { chatid, memberid, memberName } =
+                    joinrsp
+            in
+            let
+                ( mdl, newChatid, newMemberid ) =
+                    case request of
+                        NewChatReq _ ->
+                            newGameAndPlayerIds model chatid memberid
 
+                        _ ->
+                            newPlayerId model chatid memberid
+            in
+            WrappedModel mdl
+                ! [ sendToOne
+                        messageEncoder
+                        (JoinChatRsp
+                            { joinrsp
+                                | chatid = newChatid
+                                , memberid = newMemberid
+                            }
+                        )
+                        outputPort
+                        socket
+                  , sendToMany
+                        messageEncoder
+                        (JoinChatRsp
+                            { joinrsp
+                                | chatid = newChatid
+                                , memberid = Nothing
+                            }
+                        )
+                        outputPort
+                    <|
+                        otherSockets newChatid socket model
+                  ]
 
-userFunctions : UserFunctions ServerModel Message GameState Player
-userFunctions =
-    { encodeDecode = encodeDecode
-    , messageProcessor = messageProcessor
-    , messageSender = messageSender
-    , messageToGameid = Just messageToGameid
-    , inputPort = inputPort
-    , outputPort = outputPort
-    }
+        LeaveChatRsp { chatid, memberName } ->
+            -- Need to remove request.memberid from server-side tables.
+            -- If this is the last member to leave, remove chatid
+            -- from all the tables (including public chat table).
+            -- Send the unchanged response to all members.
+            wrappedModel
+                ! [ sendToOne messageEncoder response outputPort socket ]
+
+        _ ->
+            wrappedModel
+                ! [ sendToOne messageEncoder response outputPort socket ]
 
 
 messageToGameid : Message -> Maybe GameId
@@ -83,8 +173,19 @@ messageToGameid message =
             Nothing
 
 
+userFunctions : UserFunctions ServerModel Message GameState Player
+userFunctions =
+    { encodeDecode = encodeDecode
+    , messageProcessor = messageProcessor
+    , messageSender = messageSender
+    , messageToGameid = Just messageToGameid
+    , inputPort = inputPort
+    , outputPort = outputPort
+    }
+
+
 main =
-    program serverModel userFunctions Nothing
+    WebSocketFramework.Server.program serverModel userFunctions Nothing
 
 
 

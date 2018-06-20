@@ -1,11 +1,15 @@
 ---------------------------------------------------------------------
 --
 -- Client.elm
--- Simple low-level client for WebSocket server
+-- Simple low-level client for a WebSocket server
 -- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
 -- Some rights reserved.
 -- Distributed under the MIT License
 -- See LICENSE.txt
+--
+-- This program will NOT run under elm-reactor. It expects a server
+-- URL as a flag, so must be run from JavaScript code that supplies that.
+-- See the `server` directory for instructions.
 --
 ----------------------------------------------------------------------
 
@@ -70,13 +74,16 @@ update message model =
             )
 
         SubmitMessage ->
-            ( { model | input = "" }
+            ( { model
+                | input = ""
+                , messages = ("Send: " ++ model.input) :: model.messages
+              }
             , WebSocket.send model.server model.input
             )
 
         ServerMessage message ->
             ( { model
-                | messages = message :: model.messages
+                | messages = ("Recv: " ++ message) :: model.messages
               }
             , Cmd.none
             )
@@ -125,21 +132,47 @@ view : Model -> Html Msg
 view model =
     H.div
         []
-        [ H.ul [] (List.map messageView model.messages)
-        , H.input
-            [ A.type_ "text"
-            , A.placeholder "Message..."
-            , A.value model.input
-            , A.size 50
-            , E.onInput InputMessage
-            , onEnter SubmitMessage
-            ]
-            []
+        [ H.h1 [] [ H.text "WebSocket Server Test Client" ]
+        , H.ul [] (List.map messageView model.messages)
         , H.p []
-            [ H.text "Examples:"
-            , br
-            , H.code [] [ H.text "[\"req\",\"add\",{\"x\":1,\"y\":2}]" ]
-            , br
-            , H.code [] [ H.text "[\"req\",\"multiply\",{\"x\":7,\"y\":8}]" ]
+            [ H.input
+                [ A.type_ "text"
+                , A.placeholder "Message..."
+                , A.value model.input
+                , A.size 50
+                , E.onInput InputMessage
+                , onEnter SubmitMessage
+                ]
+                []
             ]
+        , H.span []
+            [ H.b [] [ H.text "Server: " ]
+            , H.text model.server
+            , br
+            , H.b [] [ H.text "Examples:" ]
+            ]
+        , H.span [] <|
+            List.concatMap
+                (\str -> [ br, H.code [] [ H.text str ] ])
+                examples
         ]
+
+
+examples : List String
+examples =
+    [ """
+       ["req","new",{"memberName":"Bill"}]
+      """
+    , """
+       ["req","send",{"memberid":"<memberid>","message","Hello, World!"}]
+      """
+    , """
+       ["req","join",{"chatid":"<chatid>,"memberName":"Bill"}]
+      """
+    , """
+       ["req","leave",{"chatid":"<chatid>,"memberName":"Bill"}]
+      """
+    , """
+       ["req","newPublic",{"memberName":"Bill","chatName":"Elm Programmers"}]
+      """
+    ]
