@@ -1,7 +1,7 @@
 {
   "name": "elm-chat-server",
   "version": "1.0.0",
-  "description": "Websocket server for wws/elm-chat-server.",
+  "description": "Websocket server for billstclair/elm-chat-server.",
   "author": "billstclair",
   "repository": {
     "type": "git",
@@ -10,8 +10,8 @@
   "main": "index.js",
   "scripts": {
     "start:server": "node ./www",
-    "build:server:server": "elm-make ../Server.elm --output ./www/server.js",
-    "build:server:client": "elm-make ../Client.elm --output ./www/client.js",
+    "build:server:server": "elm-make ../src/Server.elm --output ./www/server.js",
+    "build:server:client": "elm-make Client.elm --output ./www/client.js",
     "build:server": "npm run build:server:client && npm run build:server:server"
   },
   "files": [
