@@ -550,32 +550,54 @@ styles css =
 
 view : Model -> Html Msg
 view model =
-    center []
-        [ styles "th { text-align: right }"
-        , h2 [] [ text "Elm Chat" ]
-        , p [] [ ElmChat.chat model.settings ]
-        , table [] <|
-            List.concat
-                [ currentChatRows model
-                , [ tr [ td [ br ] ] ]
-                , newChatRows model
-                ]
-        , p [ style [ ( "color", "red" ) ] ]
-            [ case model.error of
+    div
+        [ style
+            [ ( "font-size", "14pt" )
+            , ( "width", "40em" )
+            , ( "margin", "auto" )
+            , ( "margin-top", "5em" )
+            , ( "margin-bottom", "5em" )
+            , ( "padding", "2em" )
+            , ( "border", "solid" )
+            ]
+        ]
+        [ center []
+            [ styles "th { text-align: right }"
+            , h2 []
+                [ text "Elm Chat" ]
+            , p [] [ ElmChat.chat model.settings ]
+            , table [] <|
+                List.concat
+                    [ currentChatRows model
+                    , [ tr [ td [ br ] ] ]
+                    , newChatRows model
+                    ]
+            , case model.error of
                 Nothing ->
                     text nbsp
 
                 Just msg ->
-                    text msg
-            ]
-        , p []
-            [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
-            , br
-            , a [ href "https://gibgoygames.com/" ]
-                [ text "Gib Goy Games" ]
-            , text " "
-            , a [ href "https://github.com/billstclair/elm-chat-server" ]
-                [ text "GitHub" ]
+                    p [ style [ ( "color", "red" ) ] ]
+                        [ text msg ]
+            , p []
+                [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
+            , p []
+                [ text "To leave the chat, click the 'Leave' button." ]
+            , p []
+                [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
+            , p []
+                [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
+            , p []
+                [ text "There is not yet a server for chat, so you can only play with it by yourself. I'll have a server very soon now." ]
+            , p []
+                [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
+                , br
+                , a [ href "https://gibgoygames.com/" ]
+                    [ text "Gib Goy Games" ]
+                , text " "
+                , a [ href "https://github.com/billstclair/elm-chat-server" ]
+                    [ text "GitHub" ]
+                ]
             ]
         ]
 

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+elm make src/ChatClient.elm --output site/index.html
+
+
+
