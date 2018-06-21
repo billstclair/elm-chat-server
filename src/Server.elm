@@ -70,6 +70,8 @@ encodeDecode =
     }
 
 
+{-| This will move into WebSocketFramework.Server
+-}
 otherSockets : GameId -> Socket -> WrappedModel a b c d -> List Socket
 otherSockets gameid socket (WrappedModel model) =
     case Dict.get gameid model.socketsDict of
@@ -152,14 +154,74 @@ newRecordedPlayerid (WrappedModel model) socket gameid =
 -}
 newChatAndMemberids : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
 newChatAndMemberids model socket chatid memberid =
-    ( model, chatid, memberid )
+    let
+        ( WrappedModel mdl, cid, mid ) =
+            newRecordedGameAndPlayerids model socket
+
+        state =
+            mdl.state
+
+        gameDict =
+            case Dict.get chatid state.gameDict of
+                Nothing ->
+                    state.gameDict
+
+                Just gamestate ->
+                    Dict.insert cid gamestate <|
+                        Dict.remove chatid state.gameDict
+
+        playerDict =
+            case Dict.get memberid state.playerDict of
+                Nothing ->
+                    state.playerDict
+
+                Just info ->
+                    Dict.insert mid { info | gameid = cid } <|
+                        Dict.remove memberid state.playerDict
+    in
+    ( WrappedModel
+        { mdl
+            | state =
+                { state
+                    | gameDict = gameDict
+                    , playerDict = playerDict
+                }
+        }
+    , cid
+    , mid
+    )
 
 
 {-| TODO
 -}
 newMemberid : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
 newMemberid model socket chatid memberid =
-    ( model, chatid, memberid )
+    let
+        ( WrappedModel mdl, cid, mid ) =
+            newRecordedPlayerid model socket chatid
+
+        state =
+            mdl.state
+
+        playerDict =
+            case Dict.get memberid state.playerDict of
+                Nothing ->
+                    state.playerDict
+
+                Just info ->
+                    Dict.insert mid info <|
+                        Dict.remove memberid state.playerDict
+    in
+    ( WrappedModel
+        { mdl
+            | state =
+                { state
+                    | playerDict = playerDict
+                }
+        }
+    , cid
+    , mid
+    )
 
 
 messageSender : ServerMessageSender ServerModel Message GameState Player

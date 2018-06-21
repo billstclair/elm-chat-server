@@ -605,8 +605,8 @@ view model =
             , p []
                 [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
                 , br
-                , a [ href "https://gibgoygames.com/" ]
-                    [ text "Gib Goy Games" ]
+                , a [ href "https://xossbow.com/" ]
+                    [ text "Xossbow" ]
                 , text " "
                 , a [ href "https://github.com/billstclair/elm-chat-server" ]
                     [ text "GitHub" ]
