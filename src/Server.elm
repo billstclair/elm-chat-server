@@ -67,8 +67,16 @@ encodeDecode : EncodeDecode Message
 encodeDecode =
     { encoder = messageEncoder
     , decoder = messageDecoder
-    , errorWrapper = Nothing
+    , errorWrapper = Just errorWrapper
     }
+
+
+errorWrapper : String -> Message
+errorWrapper msg =
+    ErrorRsp
+        { chatid = ""
+        , message = msg
+        }
 
 
 {-| This will move into WebSocketFramework.Server
@@ -228,18 +236,21 @@ messageSender model socket state request response =
                                 )
                                 outputPort
                                 socket
-                          , sendToMany
-                                (verbose mdl)
-                                messageEncoder
-                                (JoinChatRsp
-                                    { joinrsp
-                                        | chatid = cid
-                                        , memberid = Nothing
-                                    }
-                                )
-                                outputPort
-                            <|
-                                otherSockets cid socket model
+                          , case otherSockets cid socket model of
+                                [] ->
+                                    Cmd.none
+
+                                sockets ->
+                                    sendToMany (verbose mdl)
+                                        messageEncoder
+                                        (JoinChatRsp
+                                            { joinrsp
+                                                | chatid = cid
+                                                , memberid = Nothing
+                                            }
+                                        )
+                                        outputPort
+                                        sockets
                           ]
 
         LeaveChatRsp { chatid, memberName } ->

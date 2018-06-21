@@ -164,13 +164,13 @@ examples =
        ["req","new",{"memberName":"Bill"}]
       """
     , """
-       ["req","send",{"memberid":"<memberid>","message","Hello, World!"}]
+       ["req","send",{"memberid":"MEMBERID","message":"Hello, World!"}]
       """
     , """
-       ["req","join",{"chatid":"<chatid>,"memberName":"Bill"}]
+       ["req","join",{"chatid":"CHATID","memberName":"Bill"}]
       """
     , """
-       ["req","leave",{"chatid":"<chatid>,"memberName":"Bill"}]
+       ["req","leave",{"memberid":"MEMBERID"}]
       """
     , """
        ["req","newPublic",{"memberName":"Bill","chatName":"Elm Programmers"}]
