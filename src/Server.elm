@@ -28,6 +28,7 @@ import ChatClient.Types
         , Message(..)
         , Player
         )
+import Debug exposing (log)
 import Dict
 import List.Extra as LE
 import WebSocketFramework.Server
@@ -201,6 +202,76 @@ updatePlayerid (WrappedModel model) socket gameid playerid =
     ( WrappedModel mdl3, gameid, pid )
 
 
+{-| This will move into WebSocketFramework.Server
+-}
+removeGame : WrappedModel a b c d -> GameId -> WrappedModel a b c d
+removeGame (WrappedModel model) gameid =
+    let
+        mdl2 =
+            case Dict.get gameid model.socketsDict of
+                Nothing ->
+                    model
+
+                Just sockets ->
+                    { model
+                        | gameidDict =
+                            List.foldl Dict.remove model.gameidDict sockets
+                        , socketsDict =
+                            Dict.remove gameid model.socketsDict
+                    }
+    in
+    WrappedModel
+        { mdl2
+            | playeridDict = Dict.remove gameid mdl2.playeridDict
+        }
+
+
+{-| This will move into WebSocketFramework.Server
+
+-- Probably want a version that doesn't remove (some) public games.
+
+-}
+removePlayerid : WrappedModel a b c d -> GameId -> PlayerId -> Bool -> WrappedModel a b c d
+removePlayerid (WrappedModel model) gameid playerid keepGame =
+    case Dict.get gameid model.playeridDict of
+        Nothing ->
+            WrappedModel model
+
+        Just playerids ->
+            case LE.remove playerid playerids of
+                [] ->
+                    WrappedModel
+                        { model
+                            | playeridDict = Dict.remove gameid model.playeridDict
+                            , gameidDict =
+                                if keepGame then
+                                    model.gameidDict
+                                else
+                                    case Dict.get gameid model.socketsDict of
+                                        Nothing ->
+                                            model.gameidDict
+
+                                        Just sockets ->
+                                            List.foldl Dict.remove
+                                                model.gameidDict
+                                                sockets
+                            , socketsDict =
+                                if keepGame then
+                                    model.socketsDict
+                                else
+                                    Dict.remove gameid model.socketsDict
+                        }
+
+                playerids ->
+                    WrappedModel
+                        { model
+                            | playeridDict =
+                                Dict.insert gameid
+                                    (LE.remove playerid playerids)
+                                    model.playeridDict
+                        }
+
+
 messageSender : ServerMessageSender ServerModel Message GameState Player
 messageSender model socket state request response =
     case response of
@@ -258,13 +329,22 @@ messageSender model socket state request response =
             -- If this is the last member to leave, remove chatid
             -- from all the tables (including public chat table).
             -- Send the unchanged response to all members.
-            model
-                ! [ sendToOne (verbose model)
-                        messageEncoder
-                        response
-                        outputPort
-                        socket
-                  ]
+            case request of
+                LeaveChatReq { memberid } ->
+                    -- Change False to True if preserving a public game
+                    removePlayerid model chatid memberid False
+                        ! [ sendToMany (verbose model)
+                                messageEncoder
+                                response
+                                outputPort
+                            <|
+                                socket
+                                    :: otherSockets chatid socket model
+                          ]
+
+                _ ->
+                    -- Can't happpen
+                    model ! []
 
         _ ->
             model
