@@ -88,14 +88,35 @@ type alias Model =
 
 {-| This will move into WebSocketFramework.Server
 -}
-newRecordedGameAndPlayerids : WrappedModel a b c d -> Socket -> ( WrappedModel a b c d, GameId, PlayerId )
-newRecordedGameAndPlayerids (WrappedModel model) socket =
+updateGameAndPlayerids : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
+updateGameAndPlayerids (WrappedModel model) socket gameid playerid =
     let
         ( gid, WrappedModel mdl2 ) =
             newGameid (WrappedModel model)
 
         ( pid, WrappedModel mdl3 ) =
             newPlayerid (WrappedModel mdl2)
+
+        state =
+            mdl3.state
+
+        gameDict =
+            case Dict.get gameid state.gameDict of
+                Nothing ->
+                    state.gameDict
+
+                Just gamestate ->
+                    Dict.insert gid gamestate <|
+                        Dict.remove gameid state.gameDict
+
+        playerDict =
+            case Dict.get playerid state.playerDict of
+                Nothing ->
+                    state.playerDict
+
+                Just info ->
+                    Dict.insert pid { info | gameid = gid } <|
+                        Dict.remove playerid state.playerDict
 
         mdl4 =
             { mdl3
@@ -105,6 +126,11 @@ newRecordedGameAndPlayerids (WrappedModel model) socket =
                     Dict.insert gid [ socket ] mdl2.socketsDict
                 , playeridDict =
                     Dict.insert gid [ pid ] mdl2.playeridDict
+                , state =
+                    { state
+                        | gameDict = gameDict
+                        , playerDict = playerDict
+                    }
             }
     in
     ( WrappedModel mdl4, gid, pid )
@@ -112,8 +138,8 @@ newRecordedGameAndPlayerids (WrappedModel model) socket =
 
 {-| This will move into WebSocketFramework.Server
 -}
-newRecordedPlayerid : WrappedModel a b c d -> Socket -> GameId -> ( WrappedModel a b c d, GameId, PlayerId )
-newRecordedPlayerid (WrappedModel model) socket gameid =
+updatePlayerid : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
+updatePlayerid (WrappedModel model) socket gameid playerid =
     let
         ( pid, WrappedModel mdl2 ) =
             newPlayerid (WrappedModel model)
@@ -137,6 +163,18 @@ newRecordedPlayerid (WrappedModel model) socket gameid =
                 Just pids ->
                     pid :: pids
 
+        state =
+            mdl2.state
+
+        playerDict =
+            case Dict.get playerid state.playerDict of
+                Nothing ->
+                    state.playerDict
+
+                Just info ->
+                    Dict.insert pid info <|
+                        Dict.remove playerid state.playerDict
+
         mdl3 =
             { mdl2
                 | gameidDict =
@@ -145,83 +183,13 @@ newRecordedPlayerid (WrappedModel model) socket gameid =
                     Dict.insert gameid sockets mdl2.socketsDict
                 , playeridDict =
                     Dict.insert gameid playerids mdl2.playeridDict
+                , state =
+                    { state
+                        | playerDict = playerDict
+                    }
             }
     in
     ( WrappedModel mdl3, gameid, pid )
-
-
-{-| TODO
--}
-newChatAndMemberids : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
-newChatAndMemberids model socket chatid memberid =
-    let
-        ( WrappedModel mdl, cid, mid ) =
-            newRecordedGameAndPlayerids model socket
-
-        state =
-            mdl.state
-
-        gameDict =
-            case Dict.get chatid state.gameDict of
-                Nothing ->
-                    state.gameDict
-
-                Just gamestate ->
-                    Dict.insert cid gamestate <|
-                        Dict.remove chatid state.gameDict
-
-        playerDict =
-            case Dict.get memberid state.playerDict of
-                Nothing ->
-                    state.playerDict
-
-                Just info ->
-                    Dict.insert mid { info | gameid = cid } <|
-                        Dict.remove memberid state.playerDict
-    in
-    ( WrappedModel
-        { mdl
-            | state =
-                { state
-                    | gameDict = gameDict
-                    , playerDict = playerDict
-                }
-        }
-    , cid
-    , mid
-    )
-
-
-{-| TODO
--}
-newMemberid : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
-newMemberid model socket chatid memberid =
-    let
-        ( WrappedModel mdl, cid, mid ) =
-            newRecordedPlayerid model socket chatid
-
-        state =
-            mdl.state
-
-        playerDict =
-            case Dict.get memberid state.playerDict of
-                Nothing ->
-                    state.playerDict
-
-                Just info ->
-                    Dict.insert mid info <|
-                        Dict.remove memberid state.playerDict
-    in
-    ( WrappedModel
-        { mdl
-            | state =
-                { state
-                    | playerDict = playerDict
-                }
-        }
-    , cid
-    , mid
-    )
 
 
 messageSender : ServerMessageSender ServerModel Message GameState Player
@@ -242,10 +210,10 @@ messageSender model socket state request response =
                         ( mdl, cid, mid2 ) =
                             case request of
                                 NewChatReq _ ->
-                                    newChatAndMemberids model socket chatid mid
+                                    updateGameAndPlayerids model socket chatid mid
 
                                 _ ->
-                                    newMemberid model socket chatid mid
+                                    updatePlayerid model socket chatid mid
                     in
                     mdl
                         ! [ sendToOne
