@@ -37,6 +37,8 @@ import WebSocketFramework.Server
         , Socket
         , UserFunctions
         , WrappedModel(..)
+        , newGameid
+        , newPlayerid
         , sendToMany
         , sendToOne
         )
@@ -68,8 +70,8 @@ encodeDecode =
     }
 
 
-otherSockets : GameId -> Socket -> Model -> List Socket
-otherSockets gameid socket model =
+otherSockets : GameId -> Socket -> WrappedModel a b c d -> List Socket
+otherSockets gameid socket (WrappedModel model) =
     case Dict.get gameid model.socketsDict of
         Nothing ->
             []
@@ -82,75 +84,141 @@ type alias Model =
     WebSocketFramework.Server.Model ServerModel Message GameState Player
 
 
+{-| This will move into WebSocketFramework.Server
+-}
+newRecordedGameAndPlayerids : WrappedModel a b c d -> Socket -> ( WrappedModel a b c d, GameId, PlayerId )
+newRecordedGameAndPlayerids (WrappedModel model) socket =
+    let
+        ( gid, WrappedModel mdl2 ) =
+            newGameid (WrappedModel model)
+
+        ( pid, WrappedModel mdl3 ) =
+            newPlayerid (WrappedModel mdl2)
+
+        mdl4 =
+            { mdl3
+                | gameidDict =
+                    Dict.insert socket gid mdl3.gameidDict
+                , socketsDict =
+                    Dict.insert gid [ socket ] mdl2.socketsDict
+                , playeridDict =
+                    Dict.insert gid [ pid ] mdl2.playeridDict
+            }
+    in
+    ( WrappedModel mdl4, gid, pid )
+
+
+{-| This will move into WebSocketFramework.Server
+-}
+newRecordedPlayerid : WrappedModel a b c d -> Socket -> GameId -> ( WrappedModel a b c d, GameId, PlayerId )
+newRecordedPlayerid (WrappedModel model) socket gameid =
+    let
+        ( pid, WrappedModel mdl2 ) =
+            newPlayerid (WrappedModel model)
+
+        sockets =
+            case Dict.get gameid mdl2.socketsDict of
+                Nothing ->
+                    [ socket ]
+
+                Just socks ->
+                    if List.member socket socks then
+                        socks
+                    else
+                        socket :: socks
+
+        playerids =
+            case Dict.get gameid mdl2.playeridDict of
+                Nothing ->
+                    [ pid ]
+
+                Just pids ->
+                    pid :: pids
+
+        mdl3 =
+            { mdl2
+                | gameidDict =
+                    Dict.insert socket gameid mdl2.gameidDict
+                , socketsDict =
+                    Dict.insert gameid sockets mdl2.socketsDict
+                , playeridDict =
+                    Dict.insert gameid playerids mdl2.playeridDict
+            }
+    in
+    ( WrappedModel mdl3, gameid, pid )
+
+
 {-| TODO
 -}
-newGameAndPlayerIds : Model -> GameId -> Maybe PlayerId -> ( Model, GameId, Maybe PlayerId )
-newGameAndPlayerIds model chatid memberid =
+newChatAndMemberids : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
+newChatAndMemberids model socket chatid memberid =
     ( model, chatid, memberid )
 
 
 {-| TODO
 -}
-newPlayerId : Model -> GameId -> Maybe PlayerId -> ( Model, GameId, Maybe PlayerId )
-newPlayerId model chatid memberid =
+newMemberid : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
+newMemberid model socket chatid memberid =
     ( model, chatid, memberid )
 
 
 messageSender : ServerMessageSender ServerModel Message GameState Player
-messageSender wrappedModel socket state request response =
-    let
-        (WrappedModel model) =
-            wrappedModel
-    in
+messageSender model socket state request response =
     case response of
         JoinChatRsp joinrsp ->
             let
                 { chatid, memberid, memberName } =
                     joinrsp
             in
-            let
-                ( mdl, newChatid, newMemberid ) =
-                    case request of
-                        NewChatReq _ ->
-                            newGameAndPlayerIds model chatid memberid
+            case memberid of
+                Nothing ->
+                    -- Can't happen
+                    model ! []
 
-                        _ ->
-                            newPlayerId model chatid memberid
-            in
-            WrappedModel mdl
-                ! [ sendToOne
-                        messageEncoder
-                        (JoinChatRsp
-                            { joinrsp
-                                | chatid = newChatid
-                                , memberid = newMemberid
-                            }
-                        )
-                        outputPort
-                        socket
-                  , sendToMany
-                        messageEncoder
-                        (JoinChatRsp
-                            { joinrsp
-                                | chatid = newChatid
-                                , memberid = Nothing
-                            }
-                        )
-                        outputPort
-                    <|
-                        otherSockets newChatid socket model
-                  ]
+                Just mid ->
+                    let
+                        ( mdl, cid, mid2 ) =
+                            case request of
+                                NewChatReq _ ->
+                                    newChatAndMemberids model socket chatid mid
+
+                                _ ->
+                                    newMemberid model socket chatid mid
+                    in
+                    mdl
+                        ! [ sendToOne
+                                messageEncoder
+                                (JoinChatRsp
+                                    { joinrsp
+                                        | chatid = cid
+                                        , memberid = Just mid2
+                                    }
+                                )
+                                outputPort
+                                socket
+                          , sendToMany
+                                messageEncoder
+                                (JoinChatRsp
+                                    { joinrsp
+                                        | chatid = cid
+                                        , memberid = Nothing
+                                    }
+                                )
+                                outputPort
+                            <|
+                                otherSockets cid socket model
+                          ]
 
         LeaveChatRsp { chatid, memberName } ->
             -- Need to remove request.memberid from server-side tables.
             -- If this is the last member to leave, remove chatid
             -- from all the tables (including public chat table).
             -- Send the unchanged response to all members.
-            wrappedModel
+            model
                 ! [ sendToOne messageEncoder response outputPort socket ]
 
         _ ->
-            wrappedModel
+            model
                 ! [ sendToOne messageEncoder response outputPort socket ]
 
 
