@@ -240,27 +240,14 @@ removePlayerid (WrappedModel model) gameid playerid keepGame =
         Just playerids ->
             case LE.remove playerid playerids of
                 [] ->
-                    WrappedModel
-                        { model
-                            | playeridDict = Dict.remove gameid model.playeridDict
-                            , gameidDict =
-                                if keepGame then
-                                    model.gameidDict
-                                else
-                                    case Dict.get gameid model.socketsDict of
-                                        Nothing ->
-                                            model.gameidDict
-
-                                        Just sockets ->
-                                            List.foldl Dict.remove
-                                                model.gameidDict
-                                                sockets
-                            , socketsDict =
-                                if keepGame then
-                                    model.socketsDict
-                                else
-                                    Dict.remove gameid model.socketsDict
-                        }
+                    if keepGame then
+                        WrappedModel
+                            { model
+                                | playeridDict =
+                                    Dict.remove gameid model.playeridDict
+                            }
+                    else
+                        removeGame (WrappedModel model) gameid
 
                 playerids ->
                     WrappedModel
