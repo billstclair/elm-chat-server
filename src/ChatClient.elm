@@ -112,7 +112,23 @@ type Msg
 
 emptySettings : ElmChat.Settings Msg
 emptySettings =
-    ElmChat.makeSettings "id1" 14 True ChatUpdate
+    let
+        settings =
+            ElmChat.makeSettings "id1" 14 True ChatUpdate
+
+        attributes =
+            settings.attributes
+    in
+    { settings
+        | attributes =
+            { attributes
+                | textArea =
+                    List.concat
+                        [ attributes.textArea
+                        , [ style [ ( "height", "15em" ) ] ]
+                        ]
+            }
+    }
 
 
 init : ( Model, Cmd Msg )
@@ -553,12 +569,7 @@ view model =
     div
         [ style
             [ ( "font-size", "14pt" )
-            , ( "width", "40em" )
-            , ( "margin", "auto" )
-            , ( "margin-top", "5em" )
-            , ( "margin-bottom", "5em" )
-            , ( "padding", "2em" )
-            , ( "border", "solid" )
+            , ( "margin", "1em auto" )
             ]
         ]
         [ center []
@@ -579,16 +590,18 @@ view model =
                 Just msg ->
                     p [ style [ ( "color", "red" ) ] ]
                         [ text msg ]
-            , p []
-                [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
-            , p []
-                [ text "To leave the chat, click the 'Leave' button." ]
-            , p []
-                [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
-            , p []
-                [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
-            , p []
-                [ text "There is not yet a server for chat, so you can only play with it by yourself. I'll have a server very soon now." ]
+            , div [ style [ ( "width", "40em" ) ] ]
+                [ p []
+                    [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
+                , p []
+                    [ text "To leave the chat, click the 'Leave' button." ]
+                , p []
+                    [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
+                , p []
+                    [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
+                , p []
+                    [ text "There is not yet a server for chat, so you can only play with it by yourself. I'll have a server very soon now." ]
+                ]
             , p []
                 [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
                 , br
