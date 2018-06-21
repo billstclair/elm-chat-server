@@ -41,6 +41,7 @@ import WebSocketFramework.Server
         , newPlayerid
         , sendToMany
         , sendToOne
+        , verbose
         )
 import WebSocketFramework.Types
     exposing
@@ -217,6 +218,7 @@ messageSender model socket state request response =
                     in
                     mdl
                         ! [ sendToOne
+                                (verbose mdl)
                                 messageEncoder
                                 (JoinChatRsp
                                     { joinrsp
@@ -227,6 +229,7 @@ messageSender model socket state request response =
                                 outputPort
                                 socket
                           , sendToMany
+                                (verbose mdl)
                                 messageEncoder
                                 (JoinChatRsp
                                     { joinrsp
@@ -245,11 +248,21 @@ messageSender model socket state request response =
             -- from all the tables (including public chat table).
             -- Send the unchanged response to all members.
             model
-                ! [ sendToOne messageEncoder response outputPort socket ]
+                ! [ sendToOne (verbose model)
+                        messageEncoder
+                        response
+                        outputPort
+                        socket
+                  ]
 
         _ ->
             model
-                ! [ sendToOne messageEncoder response outputPort socket ]
+                ! [ sendToOne (verbose model)
+                        messageEncoder
+                        response
+                        outputPort
+                        socket
+                  ]
 
 
 messageToGameid : Message -> Maybe GameId
