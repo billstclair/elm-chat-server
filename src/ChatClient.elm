@@ -47,6 +47,7 @@ import Html.Attributes
         , value
         )
 import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
+import Http
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
 import WebSocket
@@ -121,6 +122,7 @@ type Msg
     | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
     | SetServer String
+    | ReceiveServerLoadFile (Result Http.Error String)
     | SetIsRemote Bool
     | SetChatName String
     | SetChatid String
@@ -153,6 +155,11 @@ emptySettings =
     }
 
 
+serverLoadFile : String
+serverLoadFile =
+    "server.txt"
+
+
 init : ( Model, Cmd Msg )
 init =
     ( { settings = emptySettings
@@ -169,7 +176,7 @@ init =
       , gameCount = 0
       , error = Nothing
       }
-    , Cmd.none
+    , Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
     )
 
 
@@ -288,6 +295,14 @@ update msg model =
 
         SetChatid id ->
             { model | chatid = id } ! []
+
+        ReceiveServerLoadFile result ->
+            case result of
+                Err error ->
+                    model ! []
+
+                Ok server ->
+                    { model | server = server } ! []
 
         ChangeChat chatid ->
             case Dict.get chatid model.chats of
@@ -675,8 +690,6 @@ view model =
                     [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
                 , p []
                     [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
-                , p []
-                    [ text "There is not yet a server for chat, so you can only play with it by yourself. I'll have a server very soon now." ]
                 ]
             , p []
                 [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"

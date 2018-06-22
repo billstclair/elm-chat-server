@@ -12,7 +12,8 @@
     "start:server": "node ./www",
     "build:server:server": "elm-make ../src/Server.elm --output ./www/server.js",
     "build:server:client": "elm-make ../src/Client.elm --output ./www/client.js",
-    "build:server": "npm run build:server:client && npm run build:server:server"
+    "build:server": "npm run build:server:client && npm run build:server:server",
+    "upload": "rsyncit -av --exclude=elm-stuff --exclude=node_modules *"
   },
   "files": [
     "index.js",
