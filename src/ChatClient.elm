@@ -13,6 +13,7 @@
 module ChatClient exposing (..)
 
 import Char
+import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
 import ChatClient.Interface exposing (messageProcessor)
 import ChatClient.Types exposing (GameState, MemberName, Message(..), Player)
 import Debug exposing (log)
@@ -35,7 +36,8 @@ import Html
         )
 import Html.Attributes
     exposing
-        ( colspan
+        ( checked
+        , colspan
         , disabled
         , href
         , selected
@@ -44,10 +46,12 @@ import Html.Attributes
         , type_
         , value
         )
-import Html.Events exposing (on, onClick, onInput, targetValue)
+import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
+import WebSocket
 import WebSocketFramework exposing (makeProxyServer, makeServer)
+import WebSocketFramework.EncodeDecode exposing (decodeMessage)
 import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface(..))
 
 
@@ -60,8 +64,19 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch <|
+        List.map
+            (\( server, interface ) ->
+                WebSocket.listen server <| WebSocketMessage interface
+            )
+        <|
+            Dict.toList model.connectedServers
 
 
 type alias ChatInfo =
@@ -83,6 +98,9 @@ type alias Model =
     , currentChat : Maybe ChatInfo
     , pendingChat : Maybe ChatInfo
     , memberName : String
+    , server : String
+    , connectedServers : Dict String Server
+    , isRemote : Bool
     , chatName : String
     , chatid : String
     , gameCount : Int
@@ -98,15 +116,19 @@ isProxyServer server =
 
 
 type Msg
-    = ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
+    = Noop
+    | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
+    | SetServer String
+    | SetIsRemote Bool
     | SetChatName String
     | SetChatid String
     | ChangeChat String
     | NewChat
     | JoinChat
     | LeaveChat PlayerId
+    | WebSocketMessage Server String
     | Receive Server Message
 
 
@@ -139,6 +161,9 @@ init =
       , currentChat = Nothing
       , pendingChat = Nothing
       , memberName = "Nobody"
+      , server = "ws://localhost:8081"
+      , connectedServers = Dict.empty
+      , isRemote = True
       , chatName = "chat"
       , chatid = ""
       , gameCount = 0
@@ -197,13 +222,40 @@ send server model message =
     WebSocketFramework.send server <| log "send" message
 
 
-newChatInfo : Model -> ( ChatInfo, Server )
+getServer : Model -> ( Model, Server )
+getServer model =
+    if not model.isRemote then
+        ( model, model.proxyServer )
+    else
+        let
+            url =
+                model.server
+        in
+        case Dict.get url model.connectedServers of
+            Just server ->
+                ( model, server )
+
+            Nothing ->
+                let
+                    server =
+                        makeServer messageEncoder url Noop
+                in
+                ( { model
+                    | connectedServers =
+                        Dict.insert url server model.connectedServers
+                  }
+                , server
+                )
+
+
+newChatInfo : Model -> ( Model, ChatInfo, Server )
 newChatInfo model =
     let
-        server =
-            model.proxyServer
+        ( mdl, server ) =
+            getServer model
     in
-    ( { chatName = model.chatName
+    ( mdl
+    , { chatName = model.chatName
       , memberNames = []
       , server = server
       , chatid = ""
@@ -219,8 +271,17 @@ newChatInfo model =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        Noop ->
+            model ! []
+
         SetMemberName name ->
             { model | memberName = name } ! []
+
+        SetServer server ->
+            { model | server = server } ! []
+
+        SetIsRemote isRemote ->
+            { model | isRemote = isRemote } ! []
 
         SetChatName name ->
             { model | chatName = name } ! []
@@ -245,10 +306,10 @@ update msg model =
 
         NewChat ->
             let
-                ( info, server ) =
+                ( mdl, info, server ) =
                     newChatInfo model
             in
-            { model | pendingChat = Just info }
+            { mdl | pendingChat = Just info }
                 ! [ send server model <|
                         NewChatReq { memberName = model.memberName }
                   ]
@@ -258,15 +319,22 @@ update msg model =
                 chatid =
                     model.chatid
 
-                ( info, server ) =
+                ( mdl, info, server ) =
                     case Dict.get chatid model.chats of
                         Just chat ->
-                            ( chat, model.proxyServer )
+                            let
+                                server =
+                                    if isProxyServer chat.server then
+                                        model.proxyServer
+                                    else
+                                        chat.server
+                            in
+                            ( model, chat, server )
 
                         Nothing ->
                             newChatInfo model
             in
-            { model | pendingChat = Just info }
+            { mdl | pendingChat = Just info }
                 ! [ send server model <|
                         JoinChatReq
                             { chatid = chatid
@@ -304,6 +372,14 @@ update msg model =
                                     }
                           ]
 
+        WebSocketMessage server json ->
+            case decodeMessage messageDecoder json of
+                Err msg ->
+                    { model | error = Just msg } ! []
+
+                Ok message ->
+                    update (Receive server message) model
+
         Receive interface message ->
             case log "Receive" message of
                 ReceiveRsp { chatid, memberName, message } ->
@@ -312,7 +388,7 @@ update msg model =
                             case model.currentChat of
                                 Nothing ->
                                     let
-                                        ( chat, _ ) =
+                                        ( _, chat, _ ) =
                                             newChatInfo model
                                     in
                                     ( emptySettings, False, chat, False )
@@ -747,6 +823,27 @@ newChatRows model =
                 , value model.memberName
                 , onInput SetMemberName
                 , size 40
+                ]
+                []
+            ]
+        ]
+    , tr
+        [ th "Server:"
+        , td
+            [ input
+                [ type_ "text"
+                , value model.server
+                , onInput SetServer
+                , size 40
+                , disabled (not model.isRemote)
+                ]
+                []
+            ]
+        , td
+            [ input
+                [ type_ "checkbox"
+                , checked model.isRemote
+                , onCheck SetIsRemote
                 ]
                 []
             ]

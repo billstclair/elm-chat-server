@@ -262,6 +262,17 @@ removePlayerid (WrappedModel model) gameid playerid keepGame =
 messageSender : ServerMessageSender ServerModel Message GameState Player
 messageSender model socket state request response =
     case response of
+        ReceiveRsp { chatid } ->
+            model
+                ! [ sendToMany (verbose model)
+                        messageEncoder
+                        response
+                        outputPort
+                    <|
+                        socket
+                            :: otherSockets chatid socket model
+                  ]
+
         JoinChatRsp joinrsp ->
             let
                 { chatid, memberid, memberName } =
