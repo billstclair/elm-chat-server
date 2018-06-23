@@ -119,7 +119,7 @@ messageEncoder message =
 
         ErrorRsp { kind, message } ->
             ( Rsp "error"
-            , [ ( "chatid", encodeErrorKind kind )
+            , [ ( "kind", encodeErrorKind kind )
               , ( "message", JE.string message )
               ]
             )

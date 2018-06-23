@@ -3,7 +3,8 @@ module Tests exposing (all)
 import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
 import ChatClient.Types as Types
     exposing
-        ( Message(..)
+        ( ErrorKind(..)
+        , Message(..)
         )
 import Dict
 import Expect exposing (Expectation)
@@ -146,7 +147,44 @@ protocolData =
             ]
         }
     , ErrorRsp
-        { chatid = "Anarchy"
-        , message = "Taxation is theft!"
+        { kind =
+            JsonDecodeError
+                { messageText = "Frobluate"
+                , decodingError = "Frobulate? Are you daft?"
+                }
+        , message = "Json decode error"
+        }
+    , ErrorRsp
+        { kind =
+            PublicChatNameExistsError
+                { chatName = "Anarchy" }
+        , message = "Public chat name exists"
+        }
+    , ErrorRsp
+        { kind =
+            UnknownChatidError
+                { chatid = "Gab" }
+        , message = "Unknown chatid"
+        }
+    , ErrorRsp
+        { kind =
+            MemberExistsError
+                { chatid = "Anarchy"
+                , memberName = "Bill"
+                }
+        , message = "Member exists in chat"
+        }
+    , ErrorRsp
+        { kind =
+            UnknownMemberidError
+                { memberid = "abcdef" }
+        , message = "Unknown memberid"
+        }
+    , ErrorRsp
+        { kind =
+            UnknownRequestError
+                { request = "frobluate"
+                }
+        , message = "What with the frobulation?"
         }
     ]
