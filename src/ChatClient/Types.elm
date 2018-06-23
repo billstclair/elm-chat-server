@@ -17,6 +17,7 @@ module ChatClient.Types
         , MemberNames
         , Message(..)
         , Player
+        , PublicChat
         , PublicChatName
         )
 
@@ -47,6 +48,12 @@ type alias Player =
 
 type alias PublicChatName =
     GameId
+
+
+type alias PublicChat =
+    { memberName : MemberName
+    , chatName : PublicChatName
+    }
 
 
 type Message
@@ -82,6 +89,8 @@ type Message
         { chatid : GameId
         , memberName : MemberName
         }
+    | GetPublicChatsReq
+    | GetPublicChatsRsp { chats : List PublicChat }
     | ErrorRsp
         { chatid : GameId
         , message : String

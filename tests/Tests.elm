@@ -134,6 +134,17 @@ protocolData =
         { chatid = "Anarchy"
         , memberName = "John"
         }
+    , GetPublicChatsReq
+    , GetPublicChatsRsp
+        { chats =
+            [ { memberName = "Bill"
+              , chatName = "Anarchy"
+              }
+            , { memberName = "billstclair"
+              , chatName = "Gab"
+              }
+            ]
+        }
     , ErrorRsp
         { chatid = "Anarchy"
         , message = "Taxation is theft!"

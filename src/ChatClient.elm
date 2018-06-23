@@ -14,8 +14,6 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Remove from connectedServers when no longer in use.
-
 Public chats.
 
 Move code into billstclair/elm-websocket-framework-server
@@ -23,7 +21,7 @@ Move code into billstclair/elm-websocket-framework-server
 Persistence. Retry creation of public chats.
 Probably need better error messages to tell what to do.
 
-If the server goes down, leave should time out and clean up the client connection.
+If the server goes down, LeaveChatReq should time out and clean up the client connection.
 
 -}
 

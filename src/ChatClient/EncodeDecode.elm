@@ -12,7 +12,7 @@
 
 module ChatClient.EncodeDecode exposing (..)
 
-import ChatClient.Types exposing (Message(..))
+import ChatClient.Types exposing (Message(..), PublicChat)
 import Dict
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
@@ -24,6 +24,7 @@ import WebSocketFramework.Types
         , MessageDecoder
         , MessageEncoder
         , Plist
+        , PublicGame
         , ReqRsp(..)
         )
 
@@ -106,12 +107,30 @@ messageEncoder message =
               ]
             )
 
+        GetPublicChatsReq ->
+            ( Req "getPublicChats"
+            , []
+            )
+
+        GetPublicChatsRsp { chats } ->
+            ( Rsp "getPublicChats"
+            , [ ( "chats", JE.list <| List.map encodePublicChat chats ) ]
+            )
+
         ErrorRsp { chatid, message } ->
             ( Rsp "error"
             , [ ( "chatid", JE.string chatid )
               , ( "message", JE.string message )
               ]
             )
+
+
+encodePublicChat : PublicChat -> Value
+encodePublicChat { memberName, chatName } =
+    JE.object
+        [ ( "memberName", JE.string memberName )
+        , ( "chatName", JE.string chatName )
+        ]
 
 
 messageDecoder : MessageDecoder Message
@@ -127,6 +146,7 @@ reqPlist =
     , ( "join", joinChatReqDecoder )
     , ( "send", sendReqDecoder )
     , ( "leave", leaveChatReqDecoder )
+    , ( "getPublicChats", getPublicChatsReqDecoder )
     ]
 
 
@@ -136,6 +156,7 @@ rspPlist =
     , ( "join", joinChatRspDecoder )
     , ( "receive", receiveRspDecoder )
     , ( "leave", leaveChatRspDecoder )
+    , ( "getPublicChats", getPublicChatsRspDecoder )
     , ( "error", errorRspDecoder )
     ]
 
@@ -249,6 +270,29 @@ leaveChatRspDecoder =
         )
         (JD.field "chatid" JD.string)
         (JD.field "memberName" JD.string)
+
+
+publicChatDecoder : Decoder PublicChat
+publicChatDecoder =
+    JD.map2
+        (\memberName chatName ->
+            { memberName = memberName
+            , chatName = chatName
+            }
+        )
+        (JD.field "memberName" JD.string)
+        (JD.field "chatName" JD.string)
+
+
+getPublicChatsReqDecoder : Decoder Message
+getPublicChatsReqDecoder =
+    JD.succeed GetPublicChatsReq
+
+
+getPublicChatsRspDecoder : Decoder Message
+getPublicChatsRspDecoder =
+    JD.map (\chats -> GetPublicChatsRsp { chats = chats }) <|
+        (JD.field "chats" <| JD.list publicChatDecoder)
 
 
 errorRspDecoder : Decoder Message
