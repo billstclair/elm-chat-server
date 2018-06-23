@@ -339,6 +339,7 @@ update msg model =
                         , settings = info.settings
                         , chats = updateChats model
                         , chatid = info.chatid
+                        , error = Nothing
                     }
                         ! [ ElmChat.restoreScroll info.settings ]
 
@@ -347,9 +348,13 @@ update msg model =
                 ( mdl, info, server ) =
                     newChatInfo model
             in
-            { mdl | pendingChat = Just info }
+            { mdl
+                | pendingChat = Just info
+                , error = Nothing
+            }
                 ! [ send server model <|
-                        NewChatReq { memberName = model.memberName }
+                        NewChatReq
+                            { memberName = model.memberName }
                   ]
 
         JoinChat ->
@@ -372,7 +377,10 @@ update msg model =
                         Nothing ->
                             newChatInfo model
             in
-            { mdl | pendingChat = Just info }
+            { mdl
+                | pendingChat = Just info
+                , error = Nothing
+            }
                 ! [ send server model <|
                         JoinChatReq
                             { chatid = chatid
@@ -388,7 +396,8 @@ update msg model =
                 Just info ->
                     model
                         ! [ send info.server model <|
-                                LeaveChatReq { memberid = memberid }
+                                LeaveChatReq
+                                    { memberid = memberid }
                           ]
 
         ChatUpdate settings cmd ->
@@ -402,7 +411,10 @@ update msg model =
                     model ! []
 
                 Just info ->
-                    { model | settings = settings }
+                    { model
+                        | settings = settings
+                        , error = Nothing
+                    }
                         ! [ send info.server model <|
                                 SendReq
                                     { memberid = memberid
@@ -560,6 +572,7 @@ update msg model =
                                         , currentChat =
                                             newCurrentChat model info2
                                         , chatid = info2.chatid
+                                        , error = Nothing
                                     }
                                         ! []
 
@@ -590,6 +603,7 @@ update msg model =
                                         newCurrentChat model info2
                                     , chatid = info2.chatid
                                     , proxyServer = updateProxy model interface
+                                    , error = Nothing
                                 }
                                     ! []
                             else
@@ -651,6 +665,7 @@ update msg model =
                                     , settings = settings
                                     , connectedServers = servers
                                     , proxyServer = updateProxy model interface
+                                    , error = Nothing
                                     , chatid =
                                         case current of
                                             Just info ->

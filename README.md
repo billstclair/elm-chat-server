@@ -1,6 +1,6 @@
 # elm-chat-server
 
-An example of using [elm-websocket-framework](http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest).
+An example of using [elm-websocket-framework](http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest) and [elm-websocket-framework-server](http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest).
 
 The client is implemented by [src/ChatClient.elm](src/ChatClient.elm). You can run it in `elm-reactor` by clicking that link. To start `elm-reactor`:
 
@@ -20,6 +20,8 @@ There are some scripts in the [bin](bin/) directory:
 The client will attempt to load the file `server.txt` from its top-level directory. If it finds it, it will replace the "Server" field with the string found there. It should be a WebSocket URL, e.g. "`ws://localhost:8081`" or "`wss://xossbow.com/chat`". The default value for the "Server" is "`ws://localhost:8081`", a local server running on the default port.
 
 See the [`server`](server/) directory's README for instructions on installing, building, and running the server.
+
+There are tests for message encoding and decoding. See the README in the [`tests`](tests/) directory for instructions for running them.
 
 There's a live client, pointing at a live server, at [xossbow.com/chat](https://xossbow.com/chat/).
 
