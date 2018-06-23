@@ -12,6 +12,21 @@
 
 module ChatClient exposing (..)
 
+{-| TODO
+
+Remove from connectedServers when no longer in use.
+
+Public chats.
+
+Move code into billstclair/elm-websocket-framework-server
+
+Persistence. Retry creation of public chats.
+Probably need better error messages to tell what to do.
+
+If the server goes down, leave should time out and clean up the client connection.
+
+-}
+
 import Char
 import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
 import ChatClient.Interface exposing (messageProcessor)
@@ -77,7 +92,8 @@ subscriptions model =
                 WebSocket.listen server <| WebSocketMessage interface
             )
         <|
-            Dict.toList model.connectedServers
+            Dict.toList <|
+                log "connectedServers" model.connectedServers
 
 
 type alias ChatInfo =
@@ -582,7 +598,7 @@ update msg model =
                                             Just idx ->
                                                 LE.removeAt idx info.memberids
 
-                                    ( chats, current, settings ) =
+                                    ( chats, current, settings, servers ) =
                                         if members == [] then
                                             let
                                                 chats =
@@ -590,6 +606,9 @@ update msg model =
 
                                                 current =
                                                     List.head <| Dict.values chats
+
+                                                servers =
+                                                    computeConnectedServers chats
                                             in
                                             ( chats
                                             , current
@@ -599,6 +618,7 @@ update msg model =
 
                                                 Just chat ->
                                                     chat.settings
+                                            , servers
                                             )
                                         else
                                             let
@@ -615,12 +635,14 @@ update msg model =
                                                 model.chats
                                             , newCurrentChat model chat
                                             , model.settings
+                                            , model.connectedServers
                                             )
                                 in
                                 { model
                                     | currentChat = current
                                     , chats = chats
                                     , settings = settings
+                                    , connectedServers = servers
                                     , proxyServer = updateProxy model interface
                                     , chatid =
                                         case current of
@@ -638,6 +660,33 @@ update msg model =
                         , pendingChat = Nothing
                     }
                         ! []
+
+
+computeConnectedServers : Dict GameId ChatInfo -> Dict String Server
+computeConnectedServers chats =
+    let
+        serverInfo : ChatInfo -> Maybe ( String, Server )
+        serverInfo =
+            \{ server } ->
+                if isProxyServer server then
+                    Nothing
+                else
+                    case server of
+                        ServerInterface record ->
+                            Just ( record.server, server )
+    in
+    List.foldl
+        (\info dict ->
+            case serverInfo info of
+                Nothing ->
+                    dict
+
+                Just ( url, server ) ->
+                    Dict.insert url server dict
+        )
+        Dict.empty
+    <|
+        Dict.values chats
 
 
 b : String -> Html Msg
@@ -690,6 +739,8 @@ view model =
                     [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
                 , p []
                     [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
+                , p []
+                    [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
                 ]
             , p []
                 [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
