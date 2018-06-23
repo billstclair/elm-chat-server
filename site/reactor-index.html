@@ -1,0 +1,17 @@
+<html>
+<!-- https://blog.ilias.xyz/elm-reactor-and-custom-html-9e7143553807 -->
+<head>
+  <meta charset="UTF-8">
+  <style>
+    /* custom styles? Sure! */
+  </style>
+</head>
+<body>
+  <!-- Prefixing that with `/_compile/` gives us magic! -->
+  <script src="/_compile/src/ChatClient.elm"></script>
+  <script>
+    var app = Elm.ChatClient.fullscreen()
+    // You could also pass flags, or setup some ports, ...
+  </script>
+</body>
+</html>

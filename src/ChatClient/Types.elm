@@ -12,7 +12,8 @@
 
 module ChatClient.Types
     exposing
-        ( GameState
+        ( ErrorKind(..)
+        , GameState
         , MemberName
         , MemberNames
         , Message(..)
@@ -56,6 +57,15 @@ type alias PublicChat =
     }
 
 
+type ErrorKind
+    = JsonDecodeError { messageText : String, decodingError : String }
+    | PublicChatNameExistsError { chatName : PublicChatName }
+    | UnknownChatidError { chatid : GameId }
+    | MemberExistsError { chatid : GameId, memberName : MemberName }
+    | UnknownMemberidError { memberid : PlayerId }
+    | UnknownRequestError { request : String }
+
+
 type Message
     = PingReq { message : String }
     | PongRsp { message : String }
@@ -92,6 +102,6 @@ type Message
     | GetPublicChatsReq
     | GetPublicChatsRsp { chats : List PublicChat }
     | ErrorRsp
-        { chatid : GameId
+        { kind : ErrorKind
         , message : String
         }

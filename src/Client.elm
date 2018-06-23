@@ -175,4 +175,7 @@ examples =
     , """
        ["req","newPublic",{"memberName":"Bill","chatName":"Elm Programmers"}]
       """
+    , """
+       ["req","getPublicChats",{}]
+      """
     ]

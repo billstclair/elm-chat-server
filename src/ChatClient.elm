@@ -14,7 +14,14 @@ module ChatClient exposing (..)
 
 {-| TODO
 
+Proper error messages, with codes to identify them.
+
 Public chats.
+Public Chats with no members should stick around until there are too many.
+Currently, the game gets removed from the tables, but the public chat
+is kept in the public games list.
+
+Limit total number of chats. Delete LRU empty public chats to make room.
 
 Move code into billstclair/elm-websocket-framework-server
 
@@ -22,6 +29,8 @@ Persistence. Retry creation of public chats.
 Probably need better error messages to tell what to do.
 
 If the server goes down, LeaveChatReq should time out and clean up the client connection.
+
+Write code notes in src/README.md
 
 -}
 

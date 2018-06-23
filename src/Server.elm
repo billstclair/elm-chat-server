@@ -24,7 +24,8 @@ import ChatClient.EncodeDecode
 import ChatClient.Interface exposing (messageProcessor)
 import ChatClient.Types
     exposing
-        ( GameState
+        ( ErrorKind(..)
+        , GameState
         , Message(..)
         , Player
         )
@@ -47,6 +48,7 @@ import WebSocketFramework.Server
 import WebSocketFramework.Types
     exposing
         ( EncodeDecode
+        , Error
         , GameId
         , InputPort
         , OutputPort
@@ -72,11 +74,25 @@ encodeDecode =
     }
 
 
-errorWrapper : String -> Message
-errorWrapper msg =
+errorWrapper : Error Message -> Message
+errorWrapper { description, message } =
+    let
+        msg =
+            case message of
+                Err msg ->
+                    msg
+
+                Ok msg ->
+                    -- Can't happen
+                    toString msg
+    in
     ErrorRsp
-        { chatid = ""
-        , message = msg
+        { kind =
+            JsonDecodeError
+                { messageText = description
+                , decodingError = msg
+                }
+        , message = "Json decode error"
         }
 
 

@@ -18,7 +18,8 @@ module ChatClient.Interface
 
 import ChatClient.Types
     exposing
-        ( GameState
+        ( ErrorKind(..)
+        , GameState
         , MemberName
         , MemberNames
         , Message(..)
@@ -136,8 +137,11 @@ messageProcessor state message =
                     ( state
                     , Just <|
                         ErrorRsp
-                            { chatid = chatName
-                            , message = "There is already a game with that name."
+                            { kind =
+                                PublicChatNameExistsError
+                                    { chatName = chatName }
+                            , message =
+                                "There is already a public chat with that name."
                             }
                     )
 
@@ -180,7 +184,7 @@ messageProcessor state message =
                     ( state
                     , Just <|
                         ErrorRsp
-                            { chatid = chatid
+                            { kind = UnknownChatidError { chatid = chatid }
                             , message = "No such chatid."
                             }
                     )
@@ -190,8 +194,13 @@ messageProcessor state message =
                         ( state
                         , Just <|
                             ErrorRsp
-                                { chatid = chatid
-                                , message = "Already a member with that name in this chat."
+                                { kind =
+                                    MemberExistsError
+                                        { chatid = chatid
+                                        , memberName = memberName
+                                        }
+                                , message =
+                                    "There is already a member with that name in this chat."
                                 }
                         )
                     else
@@ -238,7 +247,7 @@ messageProcessor state message =
                 case Dict.get memberid state.playerDict of
                     Nothing ->
                         ErrorRsp
-                            { chatid = memberid
+                            { kind = UnknownMemberidError { memberid = memberid }
                             , message = "Unknown memberid."
                             }
 
@@ -256,7 +265,9 @@ messageProcessor state message =
                     ( state
                     , Just <|
                         ErrorRsp
-                            { chatid = memberid
+                            { kind =
+                                UnknownMemberidError
+                                    { memberid = memberid }
                             , message = "Unknown memberid"
                             }
                     )
@@ -267,8 +278,11 @@ messageProcessor state message =
                             ( state
                             , Just <|
                                 ErrorRsp
-                                    { chatid = info.gameid
-                                    , message = "Can't find gameid. Shouldn't happen."
+                                    { kind =
+                                        UnknownChatidError
+                                            { chatid = info.gameid }
+                                    , message =
+                                        "Can't find chatid. Shouldn't happen."
                                     }
                             )
 
@@ -310,12 +324,29 @@ messageProcessor state message =
                                     }
                             )
 
+        GetPublicChatsReq ->
+            ( state
+            , Just <|
+                GetPublicChatsRsp
+                    { chats =
+                        List.map
+                            (\game ->
+                                { memberName = game.playerName
+                                , chatName = game.gameid
+                                }
+                            )
+                            state.publicGames
+                    }
+            )
+
         _ ->
             -- They must have sent a response. Not valid.
             ( state
             , Just <|
                 ErrorRsp
-                    { chatid = ""
-                    , message = "Unknown request: " ++ toString message
+                    { kind =
+                        UnknownRequestError
+                            { request = toString message }
+                    , message = "Unknown request"
                     }
             )

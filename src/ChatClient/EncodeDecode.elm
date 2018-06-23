@@ -12,7 +12,7 @@
 
 module ChatClient.EncodeDecode exposing (..)
 
-import ChatClient.Types exposing (Message(..), PublicChat)
+import ChatClient.Types exposing (ErrorKind(..), Message(..), PublicChat)
 import Dict
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
@@ -117,12 +117,54 @@ messageEncoder message =
             , [ ( "chats", JE.list <| List.map encodePublicChat chats ) ]
             )
 
-        ErrorRsp { chatid, message } ->
+        ErrorRsp { kind, message } ->
             ( Rsp "error"
-            , [ ( "chatid", JE.string chatid )
+            , [ ( "chatid", encodeErrorKind kind )
               , ( "message", JE.string message )
               ]
             )
+
+
+encodeErrorKind : ErrorKind -> Value
+encodeErrorKind kind =
+    case kind of
+        JsonDecodeError { messageText, decodingError } ->
+            JE.object
+                [ ( "kind", JE.string "JsonDecodeError" )
+                , ( "messageText", JE.string messageText )
+                , ( "decodingError", JE.string decodingError )
+                ]
+
+        PublicChatNameExistsError { chatName } ->
+            JE.object
+                [ ( "kind", JE.string "PublicChatNameExistsError" )
+                , ( "chatName", JE.string chatName )
+                ]
+
+        UnknownChatidError { chatid } ->
+            JE.object
+                [ ( "kind", JE.string "UnknownChatidError" )
+                , ( "chatid", JE.string chatid )
+                ]
+
+        MemberExistsError { chatid, memberName } ->
+            JE.object
+                [ ( "kind", JE.string "MemberExistsError" )
+                , ( "chatid", JE.string chatid )
+                , ( "memberName", JE.string memberName )
+                ]
+
+        UnknownMemberidError { memberid } ->
+            JE.object
+                [ ( "kind", JE.string "UnknownMemberidError" )
+                , ( "memberid", JE.string memberid )
+                ]
+
+        UnknownRequestError { request } ->
+            JE.object
+                [ ( "kind", JE.string "UnknownRequestError" )
+                , ( "request", JE.string request )
+                ]
 
 
 encodePublicChat : PublicChat -> Value
@@ -298,11 +340,76 @@ getPublicChatsRspDecoder =
 errorRspDecoder : Decoder Message
 errorRspDecoder =
     JD.map2
-        (\chatid message ->
+        (\kind message ->
             ErrorRsp
-                { chatid = chatid
+                { kind = kind
                 , message = message
                 }
         )
-        (JD.field "chatid" JD.string)
+        (JD.field "kind" errorKindDecoder)
         (JD.field "message" JD.string)
+
+
+errorKindDecoder : Decoder ErrorKind
+errorKindDecoder =
+    JD.field "kind" JD.string
+        |> JD.andThen errorKindStringDecoder
+
+
+errorKindStringDecoder : String -> Decoder ErrorKind
+errorKindStringDecoder kind =
+    case kind of
+        "JsonDecodeError" ->
+            JD.map2
+                (\messageText decodingError ->
+                    JsonDecodeError
+                        { messageText = messageText
+                        , decodingError = decodingError
+                        }
+                )
+                (JD.field "messageText" JD.string)
+                (JD.field "decodingError" JD.string)
+
+        "PublicChatNameExistsError" ->
+            JD.map
+                (\chatName ->
+                    PublicChatNameExistsError
+                        { chatName = chatName }
+                )
+                (JD.field "chatName" JD.string)
+
+        "UnknownChatidError" ->
+            JD.map
+                (\chatid ->
+                    UnknownChatidError { chatid = chatid }
+                )
+                (JD.field "chatid" JD.string)
+
+        "MemberExistsError" ->
+            JD.map2
+                (\chatid memberName ->
+                    MemberExistsError
+                        { chatid = chatid
+                        , memberName = memberName
+                        }
+                )
+                (JD.field "chatid" JD.string)
+                (JD.field "memberName" JD.string)
+
+        "UnknownMemberidError" ->
+            JD.map
+                (\memberid ->
+                    UnknownMemberidError { memberid = memberid }
+                )
+                (JD.field "memberid" JD.string)
+
+        "UnknownRequestError" ->
+            JD.map
+                (\request ->
+                    UnknownRequestError
+                        { request = request }
+                )
+                (JD.field "request" JD.string)
+
+        _ ->
+            JD.fail <| "Unknown error kind: " ++ kind
