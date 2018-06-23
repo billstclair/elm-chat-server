@@ -30,7 +30,7 @@ import ChatClient.Types
         , Player
         )
 import Debug exposing (log)
-import Dict
+import Dict exposing (Dict)
 import List.Extra as LE
 import WebSocketFramework.Server
     exposing
@@ -147,7 +147,11 @@ updateGameAndPlayerids (WrappedModel model) socket gameid playerid =
         mdl4 =
             { mdl3
                 | gameidDict =
-                    Dict.insert socket gid mdl3.gameidDict
+                    let
+                        gids =
+                            adjoinToGameidDict gid socket mdl3.gameidDict
+                    in
+                    Dict.insert socket gids mdl3.gameidDict
                 , socketsDict =
                     Dict.insert gid [ socket ] mdl2.socketsDict
                 , playeridDict =
@@ -160,6 +164,18 @@ updateGameAndPlayerids (WrappedModel model) socket gameid playerid =
             }
     in
     ( WrappedModel mdl4, gid, pid )
+
+
+{-| This will move into WebSocketFramework.Server
+-}
+adjoinToGameidDict : GameId -> Socket -> Dict Socket (List GameId) -> List GameId
+adjoinToGameidDict gameid socket dict =
+    case Dict.get socket dict of
+        Nothing ->
+            [ gameid ]
+
+        Just gids ->
+            gameid :: gids
 
 
 {-| This will move into WebSocketFramework.Server
@@ -204,7 +220,11 @@ updatePlayerid (WrappedModel model) socket gameid playerid =
         mdl3 =
             { mdl2
                 | gameidDict =
-                    Dict.insert socket gameid mdl2.gameidDict
+                    let
+                        gids =
+                            adjoinToGameidDict gameid socket mdl2.gameidDict
+                    in
+                    Dict.insert socket gids mdl2.gameidDict
                 , socketsDict =
                     Dict.insert gameid sockets mdl2.socketsDict
                 , playeridDict =
@@ -231,7 +251,9 @@ removeGame (WrappedModel model) gameid =
                 Just sockets ->
                     { model
                         | gameidDict =
-                            List.foldl Dict.remove model.gameidDict sockets
+                            List.foldl (removeFromGameidDict gameid)
+                                model.gameidDict
+                                sockets
                         , socketsDict =
                             Dict.remove gameid model.socketsDict
                     }
@@ -243,9 +265,23 @@ removeGame (WrappedModel model) gameid =
 
 
 {-| This will move into WebSocketFramework.Server
+-}
+removeFromGameidDict : GameId -> Socket -> Dict Socket (List GameId) -> Dict Socket (List GameId)
+removeFromGameidDict gameid socket dict =
+    case Dict.get socket dict of
+        Nothing ->
+            dict
 
--- Probably want a version that doesn't remove (some) public games.
+        Just gids ->
+            case LE.remove gameid gids of
+                [] ->
+                    Dict.remove socket dict
 
+                gids2 ->
+                    Dict.insert socket gids2 dict
+
+
+{-| This will move into WebSocketFramework.Server
 -}
 removePlayerid : WrappedModel a b c d -> GameId -> PlayerId -> Bool -> WrappedModel a b c d
 removePlayerid (WrappedModel model) gameid playerid keepGame =
@@ -389,12 +425,32 @@ messageToGameid message =
             Nothing
 
 
+{-| This will move into WebSocketFramework.Server
+-}
+isPublicGame : GameId -> ServerState gamestate player -> Bool
+isPublicGame chatid state =
+    case LE.find (.gameid >> (==) chatid) state.publicGames of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
+
+
+{-| This will move into WebSocketFramework.Server
+-}
+isPrivateGame : GameId -> ServerState gamestate player -> Bool
+isPrivateGame gameid state =
+    not <| isPublicGame gameid state
+
+
 userFunctions : UserFunctions ServerModel Message GameState Player
 userFunctions =
     { encodeDecode = encodeDecode
     , messageProcessor = messageProcessor
     , messageSender = messageSender
     , messageToGameid = Just messageToGameid
+    , autoDeleteGame = Just isPrivateGame
     , inputPort = inputPort
     , outputPort = outputPort
     }
