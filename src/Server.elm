@@ -36,6 +36,7 @@ import WebSocketFramework.Server
     exposing
         ( Msg
         , ServerMessageSender
+        , ServerPlayersDeleter
         , Socket
         , UserFunctions
         , WrappedModel(..)
@@ -444,6 +445,61 @@ isPrivateGame gameid state =
     not <| isPublicGame gameid state
 
 
+type alias ChatServerState =
+    ServerState GameState Player
+
+
+deletePlayersLoop : List PlayerId -> ChatServerState -> ChatServerState
+deletePlayersLoop ids state =
+    case ids of
+        [] ->
+            state
+
+        id :: tail ->
+            case Dict.get id state.playerDict of
+                Nothing ->
+                    deletePlayersLoop tail state
+
+                Just info ->
+                    case Dict.get info.gameid state.gameDict of
+                        Nothing ->
+                            deletePlayersLoop tail state
+
+                        Just gamestate ->
+                            let
+                                members =
+                                    List.filter
+                                        (Tuple.first >> (/=) id)
+                                        gamestate.members
+
+                                gs =
+                                    { state
+                                        | gameDict =
+                                            -- Don't need to test for members == [],
+                                            -- because that already happened
+                                            -- in the autoDeleteGame call.
+                                            Dict.insert
+                                                info.gameid
+                                                { gamestate
+                                                    | members = members
+                                                }
+                                                state.gameDict
+                                        , playerDict =
+                                            Dict.remove id state.playerDict
+                                    }
+                            in
+                            deletePlayersLoop tail gs
+
+
+deletePlayers : ServerPlayersDeleter ServerModel Message GameState Player
+deletePlayers (WrappedModel model) playerids serverState =
+    WrappedModel
+        { model
+            | state =
+                deletePlayersLoop playerids serverState
+        }
+
+
 userFunctions : UserFunctions ServerModel Message GameState Player
 userFunctions =
     { encodeDecode = encodeDecode
@@ -451,6 +507,8 @@ userFunctions =
     , messageSender = messageSender
     , messageToGameid = Just messageToGameid
     , autoDeleteGame = Just isPrivateGame
+    , gamesDeleter = Nothing
+    , playersDeleter = Just deletePlayers
     , inputPort = inputPort
     , outputPort = outputPort
     }
