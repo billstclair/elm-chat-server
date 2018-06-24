@@ -112,7 +112,7 @@ messageProcessor state message =
                 | gameDict =
                     Dict.insert
                         gameid
-                        { members = [ memberName ]
+                        { members = [ ( playerid, memberName ) ]
                         , memberCount = 1
                         , gameCount = 0 -- This isn't used for individual games.
                         }
@@ -160,7 +160,7 @@ messageProcessor state message =
                         | gameDict =
                             Dict.insert
                                 chatName
-                                { members = [ memberName ]
+                                { members = [ ( playerid, memberName ) ]
                                 , memberCount = 1
                                 , gameCount = 0
                                 }
@@ -200,7 +200,11 @@ messageProcessor state message =
                     )
 
                 Just gameState ->
-                    if List.member memberName gameState.members then
+                    if
+                        Nothing
+                            /= LE.find (Tuple.second >> (==) memberName)
+                                gameState.members
+                    then
                         ( state
                         , Just <|
                             ErrorRsp
@@ -230,7 +234,7 @@ messageProcessor state message =
                             | gameDict =
                                 Dict.insert chatid
                                     { gs2
-                                        | members = memberName :: gameState.members
+                                        | members = ( memberid, memberName ) :: gameState.members
                                     }
                                     state.gameDict
                             , playerDict =
@@ -246,7 +250,9 @@ messageProcessor state message =
                                 { chatid = chatid
                                 , memberid = Just memberid
                                 , memberName = memberName
-                                , otherMembers = gameState.members
+                                , otherMembers =
+                                    List.map Tuple.second
+                                        gameState.members
                                 , isPublic = Nothing /= getPublicGame chatid state
                                 }
                         )
@@ -299,7 +305,8 @@ messageProcessor state message =
                         Just gameState ->
                             let
                                 members =
-                                    LE.remove info.player gameState.members
+                                    List.filter (Tuple.first >> (/=) memberid)
+                                        gameState.members
 
                                 state2 =
                                     { state
