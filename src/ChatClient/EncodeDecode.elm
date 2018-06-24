@@ -168,10 +168,11 @@ encodeErrorKind kind =
 
 
 encodePublicChat : PublicChat -> Value
-encodePublicChat { memberName, chatName } =
+encodePublicChat { memberName, chatName, memberCount } =
     JE.object
         [ ( "memberName", JE.string memberName )
         , ( "chatName", JE.string chatName )
+        , ( "memberCount", JE.int memberCount )
         ]
 
 
@@ -316,14 +317,16 @@ leaveChatRspDecoder =
 
 publicChatDecoder : Decoder PublicChat
 publicChatDecoder =
-    JD.map2
-        (\memberName chatName ->
+    JD.map3
+        (\memberName chatName memberCount ->
             { memberName = memberName
             , chatName = chatName
+            , memberCount = memberCount
             }
         )
         (JD.field "memberName" JD.string)
         (JD.field "chatName" JD.string)
+        (JD.field "memberCount" JD.int)
 
 
 getPublicChatsReqDecoder : Decoder Message

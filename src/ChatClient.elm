@@ -830,7 +830,10 @@ styles css =
 styleSheet : String
 styleSheet =
     """
-th { text-align: right }
+th {
+  text-align: right
+}
+/* An attractive table style that I've been using for years. */
 table.prettytable {
   margin: 0em 0.5em 0.5em 0.5em;
   background: whitesmoke;
@@ -945,84 +948,6 @@ viewMainPage model =
                 [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
             ]
         ]
-
-
-viewPublicChatsPage : Model -> Html Msg
-viewPublicChatsPage model =
-    div []
-        [ p []
-            [ table []
-                [ nameRow model
-                , serverRow model
-                , tr
-                    [ th "Chat Name: "
-                    , td
-                        [ input
-                            [ type_ "text"
-                            , value model.publicChatName
-                            , onInput SetPublicChatName
-                            , size 40
-                            ]
-                            []
-                        ]
-                    , td
-                        [ button [ onClick <| JoinPublicChat Nothing ]
-                            [ text "Join" ]
-                        , text " "
-                        , button [ onClick NewPublicChat ]
-                            [ text "New" ]
-                        ]
-                    ]
-                ]
-            ]
-        , p []
-            [ case model.publicChats of
-                [] ->
-                    text "There are no public chats."
-
-                chats ->
-                    publicChatsTable model chats
-            ]
-        , errorLine model
-        , div [ style [ ( "width", "40em" ) ] ]
-            [ if model.publicChats == [] then
-                text ""
-              else
-                p []
-                    [ text "To join a public chat, fill in your 'Name', then either fill in the 'Chat Name' and click 'Join' or click on one of the underlined names in the 'Chat Name' column of the table."
-                    ]
-            , p []
-                [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
-            , p []
-                [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
-            ]
-        ]
-
-
-publicChatsTable : Model -> List PublicChat -> Html Msg
-publicChatsTable model chats =
-    table [ class "prettytable" ] <|
-        List.concat
-            [ [ tr
-                    [ th "Chat Name"
-                    , th "Created by"
-                    ]
-              ]
-            , List.map
-                (\chat ->
-                    tr
-                        [ td
-                            [ a
-                                [ href "#"
-                                , onClick <| JoinPublicChat (Just chat.chatName)
-                                ]
-                                [ text chat.chatName ]
-                            ]
-                        , td [ text chat.memberName ]
-                        ]
-                )
-                chats
-            ]
 
 
 tr : List (Html Msg) -> Html Msg
@@ -1226,6 +1151,86 @@ newChatRows model =
             ]
         ]
     ]
+
+
+viewPublicChatsPage : Model -> Html Msg
+viewPublicChatsPage model =
+    div []
+        [ p []
+            [ table []
+                [ nameRow model
+                , serverRow model
+                , tr
+                    [ th "Chat Name: "
+                    , td
+                        [ input
+                            [ type_ "text"
+                            , value model.publicChatName
+                            , onInput SetPublicChatName
+                            , size 40
+                            ]
+                            []
+                        ]
+                    , td
+                        [ button [ onClick <| JoinPublicChat Nothing ]
+                            [ text "Join" ]
+                        , text " "
+                        , button [ onClick NewPublicChat ]
+                            [ text "New" ]
+                        ]
+                    ]
+                ]
+            ]
+        , p []
+            [ case model.publicChats of
+                [] ->
+                    text "There are no public chats."
+
+                chats ->
+                    publicChatsTable model chats
+            ]
+        , errorLine model
+        , div [ style [ ( "width", "40em" ) ] ]
+            [ if model.publicChats == [] then
+                text ""
+              else
+                p []
+                    [ text "To join a public chat, fill in your 'Name', then either fill in the 'Chat Name' and click 'Join' or click on one of the underlined names in the 'Chat Name' column of the table."
+                    ]
+            , p []
+                [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
+            , p []
+                [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
+            ]
+        ]
+
+
+publicChatsTable : Model -> List PublicChat -> Html Msg
+publicChatsTable model chats =
+    table [ class "prettytable" ] <|
+        List.concat
+            [ [ tr
+                    [ th "Chat Name"
+                    , th "Created by"
+                    , th "Members"
+                    ]
+              ]
+            , List.map
+                (\chat ->
+                    tr
+                        [ td
+                            [ a
+                                [ href "#"
+                                , onClick <| JoinPublicChat (Just chat.chatName)
+                                ]
+                                [ text chat.chatName ]
+                            ]
+                        , td [ text chat.memberName ]
+                        , td [ text <| toString chat.memberCount ]
+                        ]
+                )
+                chats
+            ]
 
 
 br : Html Msg

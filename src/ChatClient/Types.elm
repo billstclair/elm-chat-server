@@ -54,6 +54,7 @@ type alias PublicChatName =
 type alias PublicChat =
     { memberName : MemberName
     , chatName : PublicChatName
+    , memberCount : Int
     }
 
 

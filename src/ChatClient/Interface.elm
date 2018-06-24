@@ -47,14 +47,24 @@ import WebSocketFramework.Types
 {-| This should move into WebSocketFramework,
 and publicGames should become a Dict.
 -}
-getPublicGame : GameId -> ServerState GameState Player -> Maybe PublicGame
-getPublicGame chatid state =
-    case List.filter (.gameid >> (==) chatid) state.publicGames of
+getPublicGame : GameId -> ServerState gamestate player -> Maybe PublicGame
+getPublicGame gameid state =
+    case List.filter (.gameid >> (==) gameid) state.publicGames of
         game :: _ ->
             Just game
 
         _ ->
             Nothing
+
+
+isPublicGame : GameId -> ServerState gamestate player -> Bool
+isPublicGame gameid state =
+    case getPublicGame gameid state of
+        Nothing ->
+            False
+
+        Just _ ->
+            True
 
 
 dummyMemberid : PlayerId
@@ -298,7 +308,7 @@ messageProcessor state message =
                                     }
 
                                 state3 =
-                                    if members == [] then
+                                    if members == [] && not (isPublicGame info.gameid state) then
                                         { state2
                                             | gameDict =
                                                 Dict.remove
@@ -331,8 +341,18 @@ messageProcessor state message =
                     { chats =
                         List.map
                             (\game ->
+                                let
+                                    count =
+                                        case Dict.get game.gameid state.gameDict of
+                                            Nothing ->
+                                                0
+
+                                            Just gamestate ->
+                                                List.length gamestate.members
+                                in
                                 { memberName = game.playerName
                                 , chatName = game.gameid
+                                , memberCount = count
                                 }
                             )
                             state.publicGames
