@@ -23,7 +23,7 @@ Limit total number of chats. Delete LRU empty public chats to make room.
 
 Move code into billstclair/elm-websocket-framework-server
 
-Persistence. Retry creation of public chats.
+Persistence. Retry joining private chats and creation of public chats. Maybe an attempt to join a private chat that no longer exists should create it.
 
 If the server goes down, LeaveChatReq should time out and clean up the client connection.
 
@@ -34,7 +34,14 @@ Write code notes in src/README.md
 import Char
 import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
 import ChatClient.Interface exposing (messageProcessor)
-import ChatClient.Types exposing (GameState, MemberName, Message(..), Player)
+import ChatClient.Types
+    exposing
+        ( GameState
+        , MemberName
+        , Message(..)
+        , Player
+        , PublicChat
+        )
 import Debug exposing (log)
 import Dict exposing (Dict)
 import ElmChat
@@ -56,6 +63,7 @@ import Html
 import Html.Attributes
     exposing
         ( checked
+        , class
         , colspan
         , disabled
         , href
@@ -100,6 +108,11 @@ subscriptions model =
                 log "connectedServers" model.connectedServers
 
 
+type WhichPage
+    = MainPage
+    | PublicChatsPage
+
+
 type alias ChatInfo =
     { chatName : String
     , memberNames : List MemberName
@@ -113,9 +126,11 @@ type alias ChatInfo =
 
 
 type alias Model =
-    { settings : ElmChat.Settings Msg
+    { whichPage : WhichPage
+    , settings : ElmChat.Settings Msg
     , proxyServer : Server
     , chats : Dict GameId ChatInfo
+    , publicChats : List PublicChat
     , currentChat : Maybe ChatInfo
     , pendingChat : Maybe ChatInfo
     , memberName : String
@@ -124,6 +139,7 @@ type alias Model =
     , isRemote : Bool
     , chatName : String
     , chatid : String
+    , publicChatName : String
     , gameCount : Int
     , error : Maybe String
     }
@@ -138,6 +154,7 @@ isProxyServer server =
 
 type Msg
     = Noop
+    | SwitchPage WhichPage
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
@@ -146,10 +163,13 @@ type Msg
     | SetIsRemote Bool
     | SetChatName String
     | SetChatid String
+    | SetPublicChatName String
     | ChangeChat String
     | NewChat
     | JoinChat
     | LeaveChat PlayerId
+    | JoinPublicChat (Maybe GameId)
+    | NewPublicChat
     | WebSocketMessage Server String
     | Receive Server Message
 
@@ -182,9 +202,11 @@ serverLoadFile =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { settings = emptySettings
+    ( { whichPage = MainPage
+      , settings = emptySettings
       , proxyServer = makeProxyServer messageProcessor Receive
       , chats = Dict.empty
+      , publicChats = []
       , currentChat = Nothing
       , pendingChat = Nothing
       , memberName = "Nobody"
@@ -193,6 +215,7 @@ init =
       , isRemote = True
       , chatName = "chat"
       , chatid = ""
+      , publicChatName = ""
       , gameCount = 0
       , error = Nothing
       }
@@ -316,6 +339,9 @@ update msg model =
         SetChatid id ->
             { model | chatid = id } ! []
 
+        SetPublicChatName name ->
+            { model | publicChatName = name } ! []
+
         ReceiveServerLoadFile result ->
             case result of
                 Err error ->
@@ -323,6 +349,36 @@ update msg model =
 
                 Ok server ->
                     { model | server = server } ! []
+
+        SwitchPage whichPage ->
+            let
+                isPublic =
+                    whichPage == PublicChatsPage
+
+                ( mdl, server ) =
+                    if isPublic && model.isRemote then
+                        getServer model
+                    else
+                        ( { model
+                            | connectedServers =
+                                computeConnectedServers model.chats
+                          }
+                        , model.proxyServer
+                        )
+
+                mdl2 =
+                    { mdl
+                        | whichPage = whichPage
+                        , publicChats = []
+                        , error = Nothing
+                    }
+            in
+            mdl2
+                ! [ if isPublic then
+                        send server mdl GetPublicChatsReq
+                    else
+                        Cmd.none
+                  ]
 
         ChangeChat chatid ->
             case Dict.get chatid model.chats of
@@ -355,35 +411,7 @@ update msg model =
                   ]
 
         JoinChat ->
-            let
-                chatid =
-                    model.chatid
-
-                ( mdl, info, server ) =
-                    case Dict.get chatid model.chats of
-                        Just chat ->
-                            let
-                                server =
-                                    if isProxyServer chat.server then
-                                        model.proxyServer
-                                    else
-                                        chat.server
-                            in
-                            ( model, chat, server )
-
-                        Nothing ->
-                            newChatInfo model
-            in
-            { mdl
-                | pendingChat = Just info
-                , error = Nothing
-            }
-                ! [ send server model <|
-                        JoinChatReq
-                            { chatid = chatid
-                            , memberName = model.memberName
-                            }
-                  ]
+            joinChat model.chatid model
 
         LeaveChat memberid ->
             case model.currentChat of
@@ -396,6 +424,34 @@ update msg model =
                                 LeaveChatReq
                                     { memberid = memberid }
                           ]
+
+        JoinPublicChat maybeChatName ->
+            let
+                chatName =
+                    case maybeChatName of
+                        Just name ->
+                            name
+
+                        Nothing ->
+                            model.publicChatName
+            in
+            joinChat chatName model
+
+        NewPublicChat ->
+            let
+                ( mdl, info, server ) =
+                    newChatInfo model
+            in
+            { mdl
+                | pendingChat = Just info
+                , error = Nothing
+            }
+                ! [ send server model <|
+                        NewPublicChatReq
+                            { memberName = model.memberName
+                            , chatName = model.publicChatName
+                            }
+                  ]
 
         ChatUpdate settings cmd ->
             ( { model | settings = settings }
@@ -673,12 +729,46 @@ update msg model =
                                 }
                                     ! []
 
+                GetPublicChatsRsp { chats } ->
+                    { model | publicChats = chats }
+                        ! []
+
                 _ ->
                     { model
                         | error = Just <| toString message
                         , pendingChat = Nothing
                     }
                         ! []
+
+
+joinChat : GameId -> Model -> ( Model, Cmd Msg )
+joinChat chatid model =
+    let
+        ( mdl, info, server ) =
+            case Dict.get chatid model.chats of
+                Just chat ->
+                    let
+                        server =
+                            if isProxyServer chat.server then
+                                model.proxyServer
+                            else
+                                chat.server
+                    in
+                    ( model, chat, server )
+
+                Nothing ->
+                    newChatInfo model
+    in
+    { mdl
+        | pendingChat = Just info
+        , error = Nothing
+    }
+        ! [ send server model <|
+                JoinChatReq
+                    { chatid = chatid
+                    , memberName = model.memberName
+                    }
+          ]
 
 
 computeConnectedServers : Dict GameId ChatInfo -> Dict String Server
@@ -723,6 +813,30 @@ styles css =
     Html.node "style" [] [ text css ]
 
 
+styleSheet : String
+styleSheet =
+    """
+th { text-align: right }
+table.prettytable {
+  margin: 0em 0.5em 0.5em 0.5em;
+  background: whitesmoke;
+  border-collapse: collapse;
+}
+table.prettytable th, table.prettytable td {
+  border: 1px silver solid;
+  padding: 0.2em;
+}
+table.prettytable th {
+  background: gainsboro;
+  text-align: center;
+}
+table.prettytable caption {
+  margin-left: inherit;
+  margin-right: inherit;
+}
+"""
+
+
 view : Model -> Html Msg
 view model =
     div
@@ -732,35 +846,16 @@ view model =
             ]
         ]
         [ center []
-            [ styles "th { text-align: right }"
+            [ styles styleSheet
             , h2 []
                 [ text "Elm Chat" ]
-            , p [] [ ElmChat.chat model.settings ]
-            , table [] <|
-                List.concat
-                    [ currentChatRows model
-                    , [ tr [ td [ br ] ] ]
-                    , newChatRows model
-                    ]
-            , case model.error of
-                Nothing ->
-                    text nbsp
+            , pageSelector model
+            , case model.whichPage of
+                MainPage ->
+                    viewMainPage model
 
-                Just msg ->
-                    p [ style [ ( "color", "red" ) ] ]
-                        [ text msg ]
-            , div [ style [ ( "width", "40em" ) ] ]
-                [ p []
-                    [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
-                , p []
-                    [ text "To leave the chat, click the 'Leave' button." ]
-                , p []
-                    [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
-                , p []
-                    [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
-                , p []
-                    [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
-                ]
+                PublicChatsPage ->
+                    viewPublicChatsPage model
             , p []
                 [ text <| "Copyright " ++ copyright ++ " 2018 Bill St. Clair"
                 , br
@@ -772,6 +867,136 @@ view model =
                 ]
             ]
         ]
+
+
+maybeLink : Bool -> String -> Msg -> Html Msg
+maybeLink hasLink string msg =
+    if hasLink then
+        a
+            [ href "#"
+            , onClick msg
+            ]
+            [ text string ]
+    else
+        b string
+
+
+pageSelector : Model -> Html Msg
+pageSelector model =
+    let
+        isMain =
+            model.whichPage == MainPage
+
+        isPublicChat =
+            model.whichPage == PublicChatsPage
+    in
+    div []
+        [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage
+        , text " "
+        , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage
+        ]
+
+
+errorLine : Model -> Html Msg
+errorLine model =
+    case model.error of
+        Nothing ->
+            text ""
+
+        Just msg ->
+            p [ style [ ( "color", "red" ) ] ]
+                [ text msg ]
+
+
+viewMainPage : Model -> Html Msg
+viewMainPage model =
+    div []
+        [ p [] [ ElmChat.chat model.settings ]
+        , table [] <|
+            List.concat
+                [ currentChatRows model
+                , newChatRows model
+                ]
+        , errorLine model
+        , div [ style [ ( "width", "40em" ) ] ]
+            [ p []
+                [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
+            , p []
+                [ text "To leave the chat, click the 'Leave' button." ]
+            , p []
+                [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
+            , p []
+                [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
+            , p []
+                [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
+            ]
+        ]
+
+
+viewPublicChatsPage : Model -> Html Msg
+viewPublicChatsPage model =
+    div []
+        [ p []
+            [ table []
+                [ nameRow model
+                , serverRow model
+                , tr
+                    [ th "Chat Name: "
+                    , td
+                        [ input
+                            [ type_ "text"
+                            , value model.publicChatName
+                            , onInput SetPublicChatName
+                            , size 40
+                            ]
+                            []
+                        ]
+                    , td
+                        [ button [ onClick <| JoinPublicChat Nothing ]
+                            [ text "Join" ]
+                        , text " "
+                        , button [ onClick NewPublicChat ]
+                            [ text "New" ]
+                        ]
+                    ]
+                ]
+            ]
+        , p []
+            [ case model.publicChats of
+                [] ->
+                    text "There are no public chats."
+
+                chats ->
+                    publicChatsTable model chats
+            ]
+        , errorLine model
+        ]
+
+
+publicChatsTable : Model -> List PublicChat -> Html Msg
+publicChatsTable model chats =
+    table [ class "prettytable" ] <|
+        List.concat
+            [ [ tr
+                    [ th "Chat Name"
+                    , th "Created by"
+                    ]
+              ]
+            , List.map
+                (\chat ->
+                    tr
+                        [ td
+                            [ a
+                                [ href "#"
+                                , onClick <| JoinPublicChat (Just chat.chatName)
+                                ]
+                                [ text chat.chatName ]
+                            ]
+                        , td [ text chat.memberName ]
+                        ]
+                )
+                chats
+            ]
 
 
 tr : List (Html Msg) -> Html Msg
@@ -832,6 +1057,7 @@ currentChatRows model =
                                 [ th "Members:"
                                 , td [ text <| String.join ", " members ]
                                 ]
+                  , tr [ td [ br ] ]
                   ]
                 ]
 
@@ -896,9 +1122,9 @@ chatSelector model info =
             chats
 
 
-newChatRows : Model -> List (Html Msg)
-newChatRows model =
-    [ tr
+nameRow : Model -> Html Msg
+nameRow model =
+    tr
         [ th "Name: "
         , td
             [ input
@@ -910,7 +1136,11 @@ newChatRows model =
                 []
             ]
         ]
-    , tr
+
+
+serverRow : Model -> Html Msg
+serverRow model =
+    tr
         [ th "Server:"
         , td
             [ input
@@ -931,6 +1161,12 @@ newChatRows model =
                 []
             ]
         ]
+
+
+newChatRows : Model -> List (Html Msg)
+newChatRows model =
+    [ nameRow model
+    , serverRow model
     , tr
         [ th "Chat Name: "
         , td
