@@ -77,6 +77,7 @@ import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
 import Http
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
+import Task
 import WebSocket
 import WebSocketFramework exposing (makeProxyServer, makeServer)
 import WebSocketFramework.EncodeDecode exposing (decodeMessage)
@@ -351,34 +352,10 @@ update msg model =
                     { model | server = server } ! []
 
         SwitchPage whichPage ->
-            let
-                isPublic =
-                    whichPage == PublicChatsPage
-
-                ( mdl, server ) =
-                    if isPublic && model.isRemote then
-                        getServer model
-                    else
-                        ( { model
-                            | connectedServers =
-                                computeConnectedServers model.chats
-                          }
-                        , model.proxyServer
-                        )
-
-                mdl2 =
-                    { mdl
-                        | whichPage = whichPage
-                        , publicChats = []
-                        , error = Nothing
-                    }
-            in
-            mdl2
-                ! [ if isPublic then
-                        send server mdl GetPublicChatsReq
-                    else
-                        Cmd.none
-                  ]
+            if whichPage == model.whichPage then
+                model ! []
+            else
+                switchPage whichPage model
 
         ChangeChat chatid ->
             case Dict.get chatid model.chats of
@@ -435,7 +412,7 @@ update msg model =
                         Nothing ->
                             model.publicChatName
             in
-            joinChat chatName model
+            joinChat chatName { model | chatName = chatName }
 
         NewPublicChat ->
             let
@@ -599,7 +576,7 @@ update msg model =
                                         , chatid = chatid
                                         , error = Nothing
                                     }
-                                        ! []
+                                        ! [ switchPageCmd MainPage ]
 
                         Nothing ->
                             -- New member for existing chat
@@ -627,7 +604,7 @@ update msg model =
                                         , chatid = info2.chatid
                                         , error = Nothing
                                     }
-                                        ! []
+                                        ! [ switchPageCmd MainPage ]
 
                 LeaveChatRsp { chatid, memberName } ->
                     case Dict.get chatid model.chats of
@@ -739,6 +716,43 @@ update msg model =
                         , pendingChat = Nothing
                     }
                         ! []
+
+
+switchPageCmd : WhichPage -> Cmd Msg
+switchPageCmd whichPage =
+    Task.perform SwitchPage (Task.succeed whichPage)
+
+
+switchPage : WhichPage -> Model -> ( Model, Cmd Msg )
+switchPage whichPage model =
+    let
+        isPublic =
+            whichPage == PublicChatsPage
+
+        ( mdl, server ) =
+            if isPublic && model.isRemote then
+                getServer model
+            else
+                ( { model
+                    | connectedServers =
+                        computeConnectedServers model.chats
+                  }
+                , model.proxyServer
+                )
+
+        mdl2 =
+            { mdl
+                | whichPage = whichPage
+                , publicChats = []
+                , error = Nothing
+            }
+    in
+    mdl2
+        ! [ if isPublic then
+                send server mdl GetPublicChatsReq
+            else
+                Cmd.none
+          ]
 
 
 joinChat : GameId -> Model -> ( Model, Cmd Msg )
@@ -970,6 +984,18 @@ viewPublicChatsPage model =
                     publicChatsTable model chats
             ]
         , errorLine model
+        , div [ style [ ( "width", "40em" ) ] ]
+            [ if model.publicChats == [] then
+                text ""
+              else
+                p []
+                    [ text "To join a public chat, fill in your 'Name', then either fill in the 'Chat Name' and click 'Join' or click on one of the underlined names in the 'Chat Name' column of the table."
+                    ]
+            , p []
+                [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
+            , p []
+                [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
+            ]
         ]
 
 
