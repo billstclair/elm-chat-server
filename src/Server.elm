@@ -22,6 +22,7 @@ import ChatClient.EncodeDecode
         , messageEncoder
         )
 import ChatClient.Interface exposing (messageProcessor)
+import ChatClient.Settings exposing (settings)
 import ChatClient.Types
     exposing
         ( ErrorKind(..)
@@ -147,6 +148,7 @@ messageSender model socket state request response =
                             { m1
                                 | state =
                                     replaceMemberid cid oldmid mid m1.state
+                                , deathRowDuration = settings.deathRowDuration
                             }
                     in
                     -- deathRowDuration change is temporary
@@ -180,10 +182,6 @@ messageSender model socket state request response =
                           ]
 
         LeaveChatRsp { chatid, memberName } ->
-            -- Need to remove request.memberid from server-side tables.
-            -- If this is the last member to leave, remove chatid
-            -- from all the tables (including public chat table).
-            -- Send the unchanged response to all members.
             case request of
                 LeaveChatReq { memberid } ->
                     -- Change False to True if preserving a public game
@@ -359,7 +357,7 @@ userFunctions =
     , messageSender = messageSender
     , messageToGameid = Just messageToGameid
     , messageToPlayerid = Just messageToPlayerid
-    , autoDeleteGame = Just isPrivateGame
+    , autoDeleteGame = Nothing --Just isPrivateGame
     , gamesDeleter = Nothing
     , playersDeleter = Just deletePlayers
     , inputPort = inputPort

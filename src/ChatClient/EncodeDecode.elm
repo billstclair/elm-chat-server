@@ -160,6 +160,14 @@ encodeErrorKind kind =
                 , ( "memberid", JE.string memberid )
                 ]
 
+        TooManyGamesError ->
+            JE.object
+                [ ( "kind", JE.string "TooManyGamesError" ) ]
+
+        TooManyPublicGamesError ->
+            JE.object
+                [ ( "kind", JE.string "TooManyPublicGamesError" ) ]
+
         UnknownRequestError { request } ->
             JE.object
                 [ ( "kind", JE.string "UnknownRequestError" )
@@ -405,6 +413,12 @@ errorKindStringDecoder kind =
                     UnknownMemberidError { memberid = memberid }
                 )
                 (JD.field "memberid" JD.string)
+
+        "TooManyGamesError" ->
+            JD.succeed TooManyGamesError
+
+        "TooManyPublicGamesError" ->
+            JD.succeed TooManyPublicGamesError
 
         "UnknownRequestError" ->
             JD.map

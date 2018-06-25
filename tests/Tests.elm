@@ -140,9 +140,11 @@ protocolData =
         { chats =
             [ { memberName = "Bill"
               , chatName = "Anarchy"
+              , memberCount = 1000
               }
             , { memberName = "billstclair"
               , chatName = "Gab"
+              , memberCount = 1000000
               }
             ]
         }
@@ -179,6 +181,14 @@ protocolData =
             UnknownMemberidError
                 { memberid = "abcdef" }
         , message = "Unknown memberid"
+        }
+    , ErrorRsp
+        { kind = TooManyGamesError
+        , message = "Too many games!"
+        }
+    , ErrorRsp
+        { kind = TooManyPublicGamesError
+        , message = "Too many public games!"
         }
     , ErrorRsp
         { kind =

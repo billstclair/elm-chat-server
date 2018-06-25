@@ -64,6 +64,8 @@ type ErrorKind
     | UnknownChatidError { chatid : GameId }
     | MemberExistsError { chatid : GameId, memberName : MemberName }
     | UnknownMemberidError { memberid : PlayerId }
+    | TooManyGamesError
+    | TooManyPublicGamesError
     | UnknownRequestError { request : String }
 
 

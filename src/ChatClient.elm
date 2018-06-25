@@ -14,15 +14,9 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Death watch should not be triggered for a player that explicitly left the chat.
-
-Public Chats with no members should stick around until there are too many.
-Currently, the game gets removed from the tables, but the public chat
-is kept in the public games list.
+Public games aren't auto-deleting yet.
 
 Limit total number of chats. Delete LRU empty public chats to make room.
-
-Move code into billstclair/elm-websocket-framework-server
 
 Persistence. Retry joining private chats and creation of public chats. Maybe an attempt to join a private chat that no longer exists should create it.
 
@@ -418,7 +412,11 @@ update msg model =
         NewPublicChat ->
             let
                 ( mdl, info, server ) =
-                    newChatInfo model
+                    newChatInfo
+                        { model
+                            | chatName =
+                                model.publicChatName
+                        }
             in
             { mdl
                 | pendingChat = Just info
@@ -946,6 +944,9 @@ viewMainPage model =
             , p []
                 [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
             , p []
+                [ text "Click the 'Public' link at the top of the page to go to the public games page. Click 'Chat' from there to come back here."
+                ]
+            , p []
                 [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
             ]
         ]
@@ -1202,6 +1203,9 @@ viewPublicChatsPage model =
                 [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
             , p []
                 [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
+            , p []
+                [ text "Click the 'Chat' link at the top of the page to go to the chat page. Click 'Public' from there to come back here."
+                ]
             ]
         ]
 

@@ -16,6 +16,7 @@ module ChatClient.Interface
         , messageProcessor
         )
 
+import ChatClient.Settings exposing (settings)
 import ChatClient.Types
     exposing
         ( ErrorKind(..)
@@ -33,21 +34,24 @@ import Json.Encode as JE exposing (Value)
 import List.Extra as LE
 import WebSocketFramework exposing (decodePlist, unknownMessage)
 import WebSocketFramework.ServerInterface exposing (dummyGameid)
-import WebSocketFramework.Types
+import WebSocketFramework.Types as Types
     exposing
         ( GameId
         , PlayerId
         , Plist
         , PublicGame
         , ReqRsp(..)
-        , ServerState
         )
+
+
+type alias ServerState =
+    Types.ServerState GameState Player
 
 
 {-| This should move into WebSocketFramework,
 and publicGames should become a Dict.
 -}
-getPublicGame : GameId -> ServerState gamestate player -> Maybe PublicGame
+getPublicGame : GameId -> ServerState -> Maybe PublicGame
 getPublicGame gameid state =
     case List.filter (.gameid >> (==) gameid) state.publicGames of
         game :: _ ->
@@ -57,7 +61,7 @@ getPublicGame gameid state =
             Nothing
 
 
-isPublicGame : GameId -> ServerState gamestate player -> Bool
+isPublicGame : GameId -> ServerState -> Bool
 isPublicGame gameid state =
     case getPublicGame gameid state of
         Nothing ->
@@ -74,68 +78,14 @@ dummyMemberid =
 
 {-| This is a ServerMessageProcessor GameState Player Message
 -}
-messageProcessor : ServerState GameState Player -> Message -> ( ServerState GameState Player, Maybe Message )
+messageProcessor : ServerState -> Message -> ( ServerState, Maybe Message )
 messageProcessor state message =
     case message of
         PingReq { message } ->
             ( state, Just <| PongRsp { message = message } )
 
         NewChatReq { memberName } ->
-            let
-                serverState =
-                    case state.state of
-                        Nothing ->
-                            { members = []
-                            , memberCount = 0
-                            , gameCount = 0
-                            }
-
-                        Just ss ->
-                            ss
-
-                gameCount =
-                    serverState.gameCount + 1
-
-                gameid =
-                    toString gameCount
-
-                playerid =
-                    "P1"
-
-                state2 =
-                    { state
-                        | state =
-                            Just { serverState | gameCount = gameCount }
-                    }
-            in
-            ( { state2
-                | gameDict =
-                    Dict.insert
-                        gameid
-                        { members = [ ( playerid, memberName ) ]
-                        , memberCount = 1
-                        , gameCount = 0 -- This isn't used for individual games.
-                        }
-                        state.gameDict
-                , playerDict =
-                    Dict.insert
-                        playerid
-                        { gameid = gameid
-                        , player = memberName
-                        }
-                        state.playerDict
-              }
-            , Just <|
-                JoinChatRsp
-                    -- chatid and memberid filled in by server code
-                    -- can't do it here, because we have no random seed available.
-                    { chatid = gameid
-                    , memberid = Just playerid
-                    , memberName = memberName
-                    , otherMembers = []
-                    , isPublic = False
-                    }
-            )
+            newChatReq state memberName
 
         NewPublicChatReq { memberName, chatName } ->
             let
@@ -315,12 +265,16 @@ messageProcessor state message =
                                     }
 
                                 state3 =
-                                    if members == [] && not (isPublicGame info.gameid state) then
+                                    if members == [] then
                                         { state2
                                             | gameDict =
                                                 Dict.remove
                                                     info.gameid
                                                     state.gameDict
+                                            , publicGames =
+                                                List.filter
+                                                    (.gameid >> (/=) info.gameid)
+                                                    state2.publicGames
                                         }
                                     else
                                         { state2
@@ -348,18 +302,9 @@ messageProcessor state message =
                     { chats =
                         List.map
                             (\game ->
-                                let
-                                    count =
-                                        case Dict.get game.gameid state.gameDict of
-                                            Nothing ->
-                                                0
-
-                                            Just gamestate ->
-                                                List.length gamestate.members
-                                in
                                 { memberName = game.playerName
                                 , chatName = game.gameid
-                                , memberCount = count
+                                , memberCount = gameMemberCount state game.gameid
                                 }
                             )
                             state.publicGames
@@ -377,3 +322,89 @@ messageProcessor state message =
                     , message = "Unknown request"
                     }
             )
+
+
+gameMemberCount : ServerState -> GameId -> Int
+gameMemberCount state gameid =
+    case Dict.get gameid state.gameDict of
+        Nothing ->
+            0
+
+        Just gamestate ->
+            List.length gamestate.members
+
+
+newChatReq : ServerState -> PlayerId -> ( ServerState, Maybe Message )
+newChatReq state memberName =
+    if Dict.size state.gameDict >= settings.maxChats then
+        ( state
+        , Just <|
+            ErrorRsp
+                { kind = TooManyGamesError
+                , message =
+                    "There may not be more than "
+                        ++ toString settings.maxChats
+                        ++ " active games."
+                }
+        )
+    else
+        newChatReqInternal state memberName
+
+
+newChatReqInternal : ServerState -> PlayerId -> ( ServerState, Maybe Message )
+newChatReqInternal state memberName =
+    let
+        serverState =
+            case state.state of
+                Nothing ->
+                    { members = []
+                    , memberCount = 0
+                    , gameCount = 0
+                    }
+
+                Just ss ->
+                    ss
+
+        gameCount =
+            serverState.gameCount + 1
+
+        gameid =
+            toString gameCount
+
+        playerid =
+            "P1"
+
+        state2 =
+            { state
+                | state =
+                    Just { serverState | gameCount = gameCount }
+            }
+    in
+    ( { state2
+        | gameDict =
+            Dict.insert
+                gameid
+                { members = [ ( playerid, memberName ) ]
+                , memberCount = 1
+                , gameCount = 0 -- This isn't used for individual games.
+                }
+                state.gameDict
+        , playerDict =
+            Dict.insert
+                playerid
+                { gameid = gameid
+                , player = memberName
+                }
+                state.playerDict
+      }
+    , Just <|
+        JoinChatRsp
+            -- chatid and memberid filled in by server code
+            -- can't do it here, because we have no random seed available.
+            { chatid = gameid
+            , memberid = Just playerid
+            , memberName = memberName
+            , otherMembers = []
+            , isPublic = False
+            }
+    )
