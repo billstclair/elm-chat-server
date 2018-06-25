@@ -14,7 +14,8 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Public chats.
+Death watch should not be triggered for a player that explicitly left the chat.
+
 Public Chats with no members should stick around until there are too many.
 Currently, the game gets removed from the tables, but the public chat
 is kept in the public games list.

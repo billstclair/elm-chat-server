@@ -42,8 +42,12 @@ import WebSocketFramework.Server
         , WrappedModel(..)
         , newGameid
         , newPlayerid
+        , otherSockets
+        , removePlayer
         , sendToMany
         , sendToOne
+        , updateGameAndPlayerids
+        , updatePlayerid
         , verbose
         )
 import WebSocketFramework.Types
@@ -97,219 +101,8 @@ errorWrapper { description, message } =
         }
 
 
-{-| This will move into WebSocketFramework.Server
--}
-otherSockets : GameId -> Socket -> WrappedModel a b c d -> List Socket
-otherSockets gameid socket (WrappedModel model) =
-    case Dict.get gameid model.socketsDict of
-        Nothing ->
-            []
-
-        Just sockets ->
-            LE.remove socket sockets
-
-
 type alias Model =
     WebSocketFramework.Server.Model ServerModel Message GameState Player
-
-
-{-| This will move into WebSocketFramework.Server
--}
-updateGameAndPlayerids : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
-updateGameAndPlayerids (WrappedModel model) socket gameid playerid =
-    let
-        ( gid, WrappedModel mdl2 ) =
-            newGameid (WrappedModel model)
-
-        ( pid, WrappedModel mdl3 ) =
-            newPlayerid (WrappedModel mdl2)
-
-        state =
-            mdl3.state
-
-        gameDict =
-            case Dict.get gameid state.gameDict of
-                Nothing ->
-                    state.gameDict
-
-                Just gamestate ->
-                    Dict.insert gid gamestate <|
-                        Dict.remove gameid state.gameDict
-
-        playerDict =
-            case Dict.get playerid state.playerDict of
-                Nothing ->
-                    state.playerDict
-
-                Just info ->
-                    Dict.insert pid { info | gameid = gid } <|
-                        Dict.remove playerid state.playerDict
-
-        mdl4 =
-            { mdl3
-                | gameidDict =
-                    let
-                        gids =
-                            adjoinToGameidDict gid socket mdl3.gameidDict
-                    in
-                    Dict.insert socket gids mdl3.gameidDict
-                , socketsDict =
-                    Dict.insert gid [ socket ] mdl2.socketsDict
-                , playeridDict =
-                    Dict.insert gid [ pid ] mdl2.playeridDict
-                , state =
-                    { state
-                        | gameDict = gameDict
-                        , playerDict = playerDict
-                    }
-            }
-    in
-    ( WrappedModel mdl4, gid, pid )
-
-
-{-| This will move into WebSocketFramework.Server
--}
-adjoinToGameidDict : GameId -> Socket -> Dict Socket (List GameId) -> List GameId
-adjoinToGameidDict gameid socket dict =
-    case Dict.get socket dict of
-        Nothing ->
-            [ gameid ]
-
-        Just gids ->
-            gameid :: gids
-
-
-{-| This will move into WebSocketFramework.Server
--}
-updatePlayerid : WrappedModel a b c d -> Socket -> GameId -> PlayerId -> ( WrappedModel a b c d, GameId, PlayerId )
-updatePlayerid (WrappedModel model) socket gameid playerid =
-    let
-        ( pid, WrappedModel mdl2 ) =
-            newPlayerid (WrappedModel model)
-
-        sockets =
-            case Dict.get gameid mdl2.socketsDict of
-                Nothing ->
-                    [ socket ]
-
-                Just socks ->
-                    if List.member socket socks then
-                        socks
-                    else
-                        socket :: socks
-
-        playerids =
-            case Dict.get gameid mdl2.playeridDict of
-                Nothing ->
-                    [ pid ]
-
-                Just pids ->
-                    pid :: pids
-
-        state =
-            mdl2.state
-
-        playerDict =
-            case Dict.get playerid state.playerDict of
-                Nothing ->
-                    state.playerDict
-
-                Just info ->
-                    Dict.insert pid info <|
-                        Dict.remove playerid state.playerDict
-
-        mdl3 =
-            { mdl2
-                | gameidDict =
-                    let
-                        gids =
-                            adjoinToGameidDict gameid socket mdl2.gameidDict
-                    in
-                    Dict.insert socket gids mdl2.gameidDict
-                , socketsDict =
-                    Dict.insert gameid sockets mdl2.socketsDict
-                , playeridDict =
-                    Dict.insert gameid playerids mdl2.playeridDict
-                , state =
-                    { state
-                        | playerDict = playerDict
-                    }
-            }
-    in
-    ( WrappedModel mdl3, gameid, pid )
-
-
-{-| This will move into WebSocketFramework.Server
--}
-removeGame : WrappedModel a b c d -> GameId -> WrappedModel a b c d
-removeGame (WrappedModel model) gameid =
-    let
-        mdl2 =
-            case Dict.get gameid model.socketsDict of
-                Nothing ->
-                    model
-
-                Just sockets ->
-                    { model
-                        | gameidDict =
-                            List.foldl (removeFromGameidDict gameid)
-                                model.gameidDict
-                                sockets
-                        , socketsDict =
-                            Dict.remove gameid model.socketsDict
-                    }
-    in
-    WrappedModel
-        { mdl2
-            | playeridDict = Dict.remove gameid mdl2.playeridDict
-        }
-
-
-{-| This will move into WebSocketFramework.Server
--}
-removeFromGameidDict : GameId -> Socket -> Dict Socket (List GameId) -> Dict Socket (List GameId)
-removeFromGameidDict gameid socket dict =
-    case Dict.get socket dict of
-        Nothing ->
-            dict
-
-        Just gids ->
-            case LE.remove gameid gids of
-                [] ->
-                    Dict.remove socket dict
-
-                gids2 ->
-                    Dict.insert socket gids2 dict
-
-
-{-| This will move into WebSocketFramework.Server
--}
-removePlayerid : WrappedModel a b c d -> GameId -> PlayerId -> Bool -> WrappedModel a b c d
-removePlayerid (WrappedModel model) gameid playerid keepGame =
-    case Dict.get gameid model.playeridDict of
-        Nothing ->
-            WrappedModel model
-
-        Just playerids ->
-            case LE.remove playerid playerids of
-                [] ->
-                    if keepGame then
-                        WrappedModel
-                            { model
-                                | playeridDict =
-                                    Dict.remove gameid model.playeridDict
-                            }
-                    else
-                        removeGame (WrappedModel model) gameid
-
-                playerids ->
-                    WrappedModel
-                        { model
-                            | playeridDict =
-                                Dict.insert gameid
-                                    (LE.remove playerid playerids)
-                                    model.playeridDict
-                        }
 
 
 messageSender : ServerMessageSender ServerModel Message GameState Player
@@ -336,24 +129,35 @@ messageSender model socket state request response =
                     -- Can't happen
                     model ! []
 
-                Just mid ->
+                Just oldmid ->
                     let
-                        ( mdl, cid, mid2 ) =
+                        ( mdl, cid, mid ) =
                             case request of
                                 NewChatReq _ ->
-                                    updateGameAndPlayerids model socket chatid mid
+                                    updateGameAndPlayerids model socket chatid oldmid
 
                                 _ ->
-                                    updatePlayerid model socket chatid mid
+                                    updatePlayerid model socket chatid oldmid
                     in
-                    mdl
+                    let
+                        (WrappedModel m1) =
+                            mdl
+
+                        m =
+                            { m1
+                                | state =
+                                    replaceMemberid cid oldmid mid m1.state
+                            }
+                    in
+                    -- deathRowDuration change is temporary
+                    WrappedModel m
                         ! [ sendToOne
                                 (verbose mdl)
                                 messageEncoder
                                 (JoinChatRsp
                                     { joinrsp
                                         | chatid = cid
-                                        , memberid = Just mid2
+                                        , memberid = Just mid
                                     }
                                 )
                                 outputPort
@@ -383,7 +187,7 @@ messageSender model socket state request response =
             case request of
                 LeaveChatReq { memberid } ->
                     -- Change False to True if preserving a public game
-                    removePlayerid model chatid memberid False
+                    removePlayer model chatid memberid False
                         ! [ sendToMany (verbose model)
                                 messageEncoder
                                 response
@@ -407,6 +211,36 @@ messageSender model socket state request response =
                   ]
 
 
+replaceMemberid : GameId -> PlayerId -> PlayerId -> ServerState GameState player -> ServerState GameState player
+replaceMemberid gameid oldmid mid state =
+    case Dict.get gameid state.gameDict of
+        Nothing ->
+            state
+
+        Just gamestate ->
+            let
+                members =
+                    List.map
+                        (\pair ->
+                            let
+                                ( id, name ) =
+                                    pair
+                            in
+                            if id == oldmid then
+                                ( mid, name )
+                            else
+                                pair
+                        )
+                        gamestate.members
+            in
+            { state
+                | gameDict =
+                    Dict.insert gameid
+                        { gamestate | members = members }
+                        state.gameDict
+            }
+
+
 messageToGameid : Message -> Maybe GameId
 messageToGameid message =
     case message of
@@ -421,6 +255,27 @@ messageToGameid message =
 
         LeaveChatRsp { chatid } ->
             Just chatid
+
+        _ ->
+            Nothing
+
+
+messageToPlayerid : Message -> Maybe PlayerId
+messageToPlayerid message =
+    case message of
+        JoinChatRsp { memberid } ->
+            case memberid of
+                Nothing ->
+                    Nothing
+
+                Just mid ->
+                    Just mid
+
+        SendReq { memberid } ->
+            Just memberid
+
+        LeaveChatReq { memberid } ->
+            Just memberid
 
         _ ->
             Nothing
@@ -449,46 +304,43 @@ type alias ChatServerState =
     ServerState GameState Player
 
 
-deletePlayersLoop : List PlayerId -> ChatServerState -> ChatServerState
-deletePlayersLoop ids state =
-    case ids of
-        [] ->
+deletePlayer : PlayerId -> ChatServerState -> ChatServerState
+deletePlayer id state =
+    case Dict.get id state.playerDict of
+        Nothing ->
             state
 
-        id :: tail ->
-            case Dict.get id state.playerDict of
+        Just info ->
+            let
+                state2 =
+                    { state
+                        | playerDict =
+                            Dict.remove id state.playerDict
+                    }
+            in
+            case Dict.get info.gameid state2.gameDict of
                 Nothing ->
-                    deletePlayersLoop tail state
+                    state2
 
-                Just info ->
-                    case Dict.get info.gameid state.gameDict of
-                        Nothing ->
-                            deletePlayersLoop tail state
-
-                        Just gamestate ->
-                            let
-                                members =
-                                    List.filter
-                                        (Tuple.first >> (/=) id)
-                                        gamestate.members
-
-                                gs =
-                                    { state
-                                        | gameDict =
-                                            -- Don't need to test for members == [],
-                                            -- because that already happened
-                                            -- in the autoDeleteGame call.
-                                            Dict.insert
-                                                info.gameid
-                                                { gamestate
-                                                    | members = members
-                                                }
-                                                state.gameDict
-                                        , playerDict =
-                                            Dict.remove id state.playerDict
-                                    }
-                            in
-                            deletePlayersLoop tail gs
+                Just gamestate ->
+                    let
+                        members =
+                            List.filter
+                                (Tuple.first >> (/=) id)
+                                gamestate.members
+                    in
+                    { state2
+                        | gameDict =
+                            -- Don't need to test for members == [],
+                            -- because that already happened
+                            -- in the autoDeleteGame call.
+                            Dict.insert
+                                info.gameid
+                                { gamestate
+                                    | members = members
+                                }
+                                state2.gameDict
+                    }
 
 
 deletePlayers : ServerPlayersDeleter ServerModel Message GameState Player
@@ -496,7 +348,7 @@ deletePlayers (WrappedModel model) playerids serverState =
     WrappedModel
         { model
             | state =
-                deletePlayersLoop playerids serverState
+                List.foldl deletePlayer serverState playerids
         }
 
 
@@ -506,6 +358,7 @@ userFunctions =
     , messageProcessor = messageProcessor
     , messageSender = messageSender
     , messageToGameid = Just messageToGameid
+    , messageToPlayerid = Just messageToPlayerid
     , autoDeleteGame = Just isPrivateGame
     , gamesDeleter = Nothing
     , playersDeleter = Just deletePlayers
