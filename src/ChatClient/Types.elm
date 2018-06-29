@@ -29,9 +29,7 @@ import WebSocketFramework.Types exposing (GameId, PlayerId)
 
 
 type alias GameState =
-    { members : List ( PlayerId, MemberName )
-    , memberCount : Int
-    , gameCount : Int
+    { members : List ( PlayerId, Player )
     }
 
 
