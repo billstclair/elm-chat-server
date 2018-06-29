@@ -88,57 +88,7 @@ messageProcessor state message =
             newChatReq state memberName
 
         NewPublicChatReq { memberName, chatName } ->
-            case Dict.get chatName state.gameDict of
-                Just _ ->
-                    ( state
-                    , Just <|
-                        ErrorRsp
-                            { kind =
-                                PublicChatNameExistsError
-                                    { chatName = chatName }
-                            , message =
-                                "There is already a public chat with that name."
-                            }
-                    )
-
-                Nothing ->
-                    let
-                        ( memberid, state2 ) =
-                            ServerInterface.newPlayerid state
-
-                        gamestate =
-                            { members = [ ( memberid, memberName ) ] }
-
-                        state3 =
-                            ServerInterface.addGame chatName gamestate state2
-
-                        info =
-                            { gameid = chatName
-                            , player = memberName
-                            }
-
-                        state4 =
-                            ServerInterface.addPlayer memberid info state3
-
-                        publicGame =
-                            { gameid = chatName
-                            , playerName = memberName
-                            }
-                    in
-                    ( { state4
-                        | publicGames =
-                            ServerInterface.appendPublicGames publicGame
-                                state4.publicGames
-                      }
-                    , Just <|
-                        JoinChatRsp
-                            { chatid = chatName
-                            , memberid = Just memberid
-                            , memberName = memberName
-                            , otherMembers = []
-                            , isPublic = True
-                            }
-                    )
+            newPublicChatReq state memberName chatName
 
         JoinChatReq { chatid, memberName } ->
             case Dict.get chatid state.gameDict of
@@ -263,18 +213,17 @@ messageProcessor state message =
                                             )
                                             state
                                     else
-                                        ServerInterface.removePlayer memberid
-                                            { state
-                                                | gameDict =
-                                                    Dict.insert
-                                                        info.gameid
-                                                        { gamestate
-                                                            | members = members
-                                                        }
-                                                        state.gameDict
-                                            }
+                                        { state
+                                            | gameDict =
+                                                Dict.insert
+                                                    info.gameid
+                                                    { gamestate
+                                                        | members = members
+                                                    }
+                                                    state.gameDict
+                                        }
                             in
-                            ( state2
+                            ( ServerInterface.removePlayer memberid state2
                             , Just <|
                                 LeaveChatRsp
                                     { chatid = info.gameid
@@ -321,6 +270,78 @@ gameMemberCount state gameid =
             List.length gamestate.members
 
 
+newPublicChatReq : ServerState -> MemberName -> GameId -> ( ServerState, Maybe Message )
+newPublicChatReq state memberName chatName =
+    case Dict.get chatName state.gameDict of
+        Just _ ->
+            ( state
+            , Just <|
+                ErrorRsp
+                    { kind =
+                        PublicChatNameExistsError
+                            { chatName = chatName }
+                    , message =
+                        "There is already a public chat with that name."
+                    }
+            )
+
+        Nothing ->
+            if List.length state.publicGames >= settings.maxPublicChats then
+                ( state
+                , Just <|
+                    ErrorRsp
+                        { kind = TooManyPublicGamesError
+                        , message =
+                            "There may not be more than "
+                                ++ toString settings.maxPublicChats
+                                ++ " public chats."
+                        }
+                )
+            else
+                newPublicChatReqInternal state memberName chatName
+
+
+newPublicChatReqInternal : ServerState -> MemberName -> GameId -> ( ServerState, Maybe Message )
+newPublicChatReqInternal state memberName chatName =
+    let
+        ( memberid, state2 ) =
+            ServerInterface.newPlayerid state
+
+        gamestate =
+            { members = [ ( memberid, memberName ) ] }
+
+        state3 =
+            ServerInterface.addGame chatName gamestate state2
+
+        info =
+            { gameid = chatName
+            , player = memberName
+            }
+
+        state4 =
+            ServerInterface.addPlayer memberid info state3
+
+        publicGame =
+            { gameid = chatName
+            , playerName = memberName
+            }
+    in
+    ( { state4
+        | publicGames =
+            ServerInterface.appendPublicGames publicGame
+                state4.publicGames
+      }
+    , Just <|
+        JoinChatRsp
+            { chatid = chatName
+            , memberid = Just memberid
+            , memberName = memberName
+            , otherMembers = []
+            , isPublic = True
+            }
+    )
+
+
 newChatReq : ServerState -> MemberName -> ( ServerState, Maybe Message )
 newChatReq state memberName =
     if Dict.size state.gameDict >= settings.maxChats then
@@ -331,7 +352,7 @@ newChatReq state memberName =
                 , message =
                     "There may not be more than "
                         ++ toString settings.maxChats
-                        ++ " active games."
+                        ++ " active chats."
                 }
         )
     else
@@ -345,7 +366,7 @@ newChatReqInternal state memberName =
             ServerInterface.newGameid state
 
         ( memberid, state3 ) =
-            ServerInterface.newPlayerid state
+            ServerInterface.newPlayerid state2
 
         gamestate =
             { members = [ ( memberid, memberName ) ] }
