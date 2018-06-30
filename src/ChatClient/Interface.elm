@@ -34,6 +34,13 @@ import Json.Encode as JE exposing (Value)
 import List.Extra as LE
 import WebSocketFramework exposing (decodePlist, unknownMessage)
 import WebSocketFramework.ServerInterface as ServerInterface
+    exposing
+        ( gameCount
+        , getGame
+        , getPlayer
+        , updateGame
+        , updatePlayer
+        )
 import WebSocketFramework.Types as Types
     exposing
         ( GameId
@@ -91,7 +98,7 @@ messageProcessor state message =
             newPublicChatReq state memberName chatName
 
         JoinChatReq { chatid, memberName } ->
-            case Dict.get chatid state.gameDict of
+            case getGame chatid state of
                 Nothing ->
                     ( state
                     , Just <|
@@ -125,16 +132,15 @@ messageProcessor state message =
                                 ServerInterface.newPlayerid state
 
                             state3 =
-                                { state2
-                                    | gameDict =
-                                        Dict.insert chatid
-                                            { gamestate
-                                                | members =
-                                                    ( memberid, memberName )
-                                                        :: gamestate.members
-                                            }
-                                            state2.gameDict
-                                }
+                                updateGame chatid
+                                    (Just
+                                        { gamestate
+                                            | members =
+                                                ( memberid, memberName )
+                                                    :: gamestate.members
+                                        }
+                                    )
+                                    state2
 
                             info =
                                 { gameid = chatid
@@ -157,7 +163,7 @@ messageProcessor state message =
         SendReq { memberid, message } ->
             ( state
             , Just <|
-                case Dict.get memberid state.playerDict of
+                case getPlayer memberid state of
                     Nothing ->
                         ErrorRsp
                             { kind = UnknownMemberidError { memberid = memberid }
@@ -173,7 +179,7 @@ messageProcessor state message =
             )
 
         LeaveChatReq { memberid } ->
-            case Dict.get memberid state.playerDict of
+            case getPlayer memberid state of
                 Nothing ->
                     ( state
                     , Just <|
@@ -186,7 +192,7 @@ messageProcessor state message =
                     )
 
                 Just info ->
-                    case Dict.get info.gameid state.gameDict of
+                    case getGame info.gameid state of
                         Nothing ->
                             ( state
                             , Just <|
@@ -214,16 +220,14 @@ messageProcessor state message =
                                             )
                                             state
                                     else
-                                        ServerInterface.removePlayer memberid
-                                            { state
-                                                | gameDict =
-                                                    Dict.insert
-                                                        info.gameid
-                                                        { gamestate
-                                                            | members = members
-                                                        }
-                                                        state.gameDict
-                                            }
+                                        ServerInterface.removePlayer memberid <|
+                                            updateGame info.gameid
+                                                (Just
+                                                    { gamestate
+                                                        | members = members
+                                                    }
+                                                )
+                                                state
                             in
                             ( state2
                             , Just <|
@@ -264,7 +268,7 @@ messageProcessor state message =
 
 gameMemberCount : ServerState -> GameId -> Int
 gameMemberCount state gameid =
-    case Dict.get gameid state.gameDict of
+    case getGame gameid state of
         Nothing ->
             0
 
@@ -274,7 +278,7 @@ gameMemberCount state gameid =
 
 newPublicChatReq : ServerState -> MemberName -> GameId -> ( ServerState, Maybe Message )
 newPublicChatReq state memberName chatName =
-    case Dict.get chatName state.gameDict of
+    case getGame chatName state of
         Just _ ->
             ( state
             , Just <|
@@ -346,7 +350,7 @@ newPublicChatReqInternal state memberName chatName =
 
 newChatReq : ServerState -> MemberName -> ( ServerState, Maybe Message )
 newChatReq state memberName =
-    if Dict.size state.gameDict >= settings.maxChats then
+    if gameCount state >= settings.maxChats then
         ( state
         , Just <|
             ErrorRsp

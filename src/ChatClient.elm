@@ -14,21 +14,19 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Multi-window chat doesn't always echo in all windows. Typing in the window of the chat originator doesn't echo in the other windows.
-
-Only print the message from ErrorRsp.
-
-Notify of receipt of message or joins on invisibe chats.
-
-Sort public chats by name.
+Send out LeaveChat message when a player gets auto-removed after disconnecting.
 
 Join and leave message should appear in chat window.
 
+Notify of receipt of message or joins on invisible chats.
+
+Sort public chats by name.
+
 Enter/Return should auto-press "New" or "Join" button.
 
-Hide/Show Instructions button.
+Don't delete public chats until necessary to satisfy limit. Admin mode to enable deleting them by hand. Clear creator when he disconnects. Let him delete the public game when he leaves, if nobody else is in it.
 
-Don't delete public chats until necessary to satisfy limit.
+Don't allow blank public chat name.
 
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first.
 
@@ -148,6 +146,7 @@ type alias Model =
     , chatid : String
     , publicChatName : String
     , gameCount : Int
+    , hideHelp : Bool
     , error : Maybe String
     }
 
@@ -171,6 +170,7 @@ type Msg
     | SetChatName String
     | SetChatid String
     | SetPublicChatName String
+    | ShowHideHelp
     | ChangeChat String
     | NewChat
     | JoinChat
@@ -225,6 +225,7 @@ init =
       , chatid = ""
       , publicChatName = ""
       , gameCount = 0
+      , hideHelp = False
       , error = Nothing
       }
     , Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -355,6 +356,9 @@ update msg model =
 
         SetPublicChatName name ->
             { model | publicChatName = name } ! []
+
+        ShowHideHelp ->
+            { model | hideHelp = not model.hideHelp } ! []
 
         ReceiveServerLoadFile result ->
             case result of
@@ -944,6 +948,17 @@ pageSelector model =
         ]
 
 
+showHideHelpButton : Model -> Html Msg
+showHideHelpButton model =
+    button [ onClick ShowHideHelp ]
+        [ text <|
+            if model.hideHelp then
+                "Show Help"
+            else
+                "Hide Help"
+        ]
+
+
 errorLine : Model -> Html Msg
 errorLine model =
     case model.error of
@@ -965,21 +980,25 @@ viewMainPage model =
                 , newChatRows model
                 ]
         , errorLine model
-        , div [ style [ ( "width", "40em" ) ] ]
-            [ p []
-                [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
-            , p []
-                [ text "To leave the chat, click the 'Leave' button." ]
-            , p []
-                [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
-            , p []
-                [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
-            , p []
-                [ text "Click the 'Public' link at the top of the page to go to the public games page. Click 'Chat' from there to come back here."
+        , showHideHelpButton model
+        , if model.hideHelp then
+            text ""
+          else
+            div [ style [ ( "width", "40em" ) ] ]
+                [ p []
+                    [ text "To start a new chat, fill in your 'Name' and a 'Chat Name' (your local name for the chat, not sent to the server), and click the 'New' button. Then you can fill in the box at the top labelled with your name and type Enter/Return or click the 'Send' button to chat. Give the 'ID' to other people so they can join the chat with you." ]
+                , p []
+                    [ text "To leave the chat, click the 'Leave' button." ]
+                , p []
+                    [ text "To join an existing chat, enter your 'Name', paste the 'Chat ID', and click the 'Join' button. You may enter a chat multiple times with different names, and an input box will appear at the top for each member." ]
+                , p []
+                    [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
+                , p []
+                    [ text "Click the 'Public' link at the top of the page to go to the public games page. Click 'Chat' from there to come back here."
+                    ]
+                , p []
+                    [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
                 ]
-            , p []
-                [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
-            ]
         ]
 
 

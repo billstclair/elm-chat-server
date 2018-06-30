@@ -31,7 +31,6 @@ import ChatClient.Types
         , Player
         )
 import Debug exposing (log)
-import Dict exposing (Dict)
 import List.Extra as LE
 import WebSocketFramework.Server
     exposing
@@ -45,6 +44,13 @@ import WebSocketFramework.Server
         , sendToMany
         , sendToOne
         , verbose
+        )
+import WebSocketFramework.ServerInterface
+    exposing
+        ( getGame
+        , getPlayer
+        , updateGame
+        , updatePlayer
         )
 import WebSocketFramework.Types
     exposing
@@ -243,19 +249,16 @@ type alias ChatServerState =
 
 deletePlayer : PlayerId -> ChatServerState -> ChatServerState
 deletePlayer id state =
-    case Dict.get id state.playerDict of
+    case getPlayer id state of
         Nothing ->
             state
 
         Just info ->
             let
                 state2 =
-                    { state
-                        | playerDict =
-                            Dict.remove id state.playerDict
-                    }
+                    updatePlayer id Nothing state
             in
-            case Dict.get info.gameid state2.gameDict of
+            case getGame info.gameid state2 of
                 Nothing ->
                     state2
 
@@ -266,18 +269,9 @@ deletePlayer id state =
                                 (Tuple.first >> (/=) id)
                                 gamestate.members
                     in
-                    { state2
-                        | gameDict =
-                            -- Don't need to test for members == [],
-                            -- because that already happened
-                            -- in the autoDeleteGame call.
-                            Dict.insert
-                                info.gameid
-                                { gamestate
-                                    | members = members
-                                }
-                                state2.gameDict
-                    }
+                    updateGame info.gameid
+                        (Just { gamestate | members = members })
+                        state2
 
 
 deletePlayers : ServerPlayersDeleter ServerModel Message GameState Player
