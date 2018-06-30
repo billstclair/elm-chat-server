@@ -40,9 +40,9 @@ import WebSocketFramework.Server
         , Socket
         , UserFunctions
         , WrappedModel(..)
-        , otherSockets
-        , sendToMany
+        , sendToAll
         , sendToOne
+        , sendToOthers
         , verbose
         )
 import WebSocketFramework.ServerInterface
@@ -112,13 +112,10 @@ messageSender model socket state request response =
     case response of
         ReceiveRsp { chatid } ->
             model
-                ! [ sendToMany (verbose model)
+                ! [ sendToAll chatid
+                        model
                         messageEncoder
                         response
-                        outputPort
-                    <|
-                        socket
-                            :: otherSockets chatid socket model
                   ]
 
         JoinChatRsp joinrsp ->
@@ -147,31 +144,29 @@ messageSender model socket state request response =
                                 response
                                 outputPort
                                 socket
-                          , case otherSockets chatid socket model of
-                                [] ->
-                                    Cmd.none
-
-                                sockets ->
-                                    sendToMany (verbose model)
-                                        messageEncoder
-                                        (JoinChatRsp
-                                            { joinrsp
-                                                | memberid = Nothing
-                                            }
-                                        )
-                                        outputPort
-                                        sockets
+                          , sendToOthers chatid
+                                socket
+                                model
+                                messageEncoder
+                            <|
+                                JoinChatRsp
+                                    { joinrsp
+                                        | memberid = Nothing
+                                    }
                           ]
 
         LeaveChatRsp { chatid } ->
             model
-                ! [ sendToMany (verbose model)
+                ! [ sendToOne (verbose model)
                         messageEncoder
                         response
                         outputPort
-                    <|
                         socket
-                            :: otherSockets chatid socket model
+                  , sendToOthers chatid
+                        socket
+                        model
+                        messageEncoder
+                        response
                   ]
 
         _ ->
@@ -275,12 +270,36 @@ deletePlayer id state =
 
 
 deletePlayers : ServerPlayersDeleter ServerModel Message GameState Player
-deletePlayers (WrappedModel model) playerids serverState =
-    WrappedModel
-        { model
-            | state =
-                List.foldl deletePlayer serverState playerids
-        }
+deletePlayers model playerids serverState =
+    let
+        delete =
+            \playerid ( state, cmd ) ->
+                case getPlayer playerid state of
+                    Nothing ->
+                        ( state, cmd )
+
+                    Just info ->
+                        deletePlayer playerid state
+                            ! [ cmd
+                              , sendToAll info.gameid
+                                    model
+                                    messageEncoder
+                                <|
+                                    LeaveChatRsp
+                                        { chatid = info.gameid
+                                        , memberName = info.player
+                                        }
+                              ]
+
+        (WrappedModel mdl) =
+            model
+    in
+    let
+        ( state, cmd ) =
+            List.foldl delete ( serverState, Cmd.none ) playerids
+    in
+    WrappedModel { mdl | state = state }
+        ! [ cmd ]
 
 
 userFunctions : UserFunctions ServerModel Message GameState Player

@@ -3,7 +3,7 @@
 -- Settings.elm
 -- Parameters for Elm Chat server.
 -- These probably want to be settable with environment variables.
--- Copyright (c) 2017 Bill St. Clair <billstclair@gmail.com>
+-- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
 -- Some rights reserved.
 -- Distributed under the MIT License
 -- See LICENSE.txt

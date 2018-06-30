@@ -2,7 +2,7 @@
 --
 -- ChatClient.elm
 -- The client side of a chat client/server demo for billstclair/elm-websocket-framework
--- Copyright (c) 2017 Bill St. Clair <billstclair@gmail.com>
+-- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
 -- Some rights reserved.
 -- Distributed under the MIT License
 -- See LICENSE.txt
@@ -13,10 +13,6 @@
 module ChatClient exposing (..)
 
 {-| TODO
-
-Join and leave messages should appear in chat window.
-
-Send out LeaveChat message when a player gets auto-removed after disconnecting.
 
 Notify of activity on invisible chats.
 "Activity on: <list of chat names>"
@@ -511,7 +507,7 @@ update msg model =
                     update (Receive server message) model
 
         Receive interface message ->
-            case message of
+            case log "Receive" message of
                 ReceiveRsp { chatid, memberName, message } ->
                     let
                         ( settings, isVisible, chat, updateChats ) =
