@@ -14,23 +14,32 @@ module ChatClient exposing (..)
 
 {-| TODO
 
+Join and leave messages should appear in chat window.
+
 Send out LeaveChat message when a player gets auto-removed after disconnecting.
 
-Join and leave message should appear in chat window.
-
-Notify of receipt of message or joins on invisible chats.
+Notify of activity on invisible chats.
+"Activity on: <list of chat names>"
+Mark the chats with activity in the "Chat:" <select>
+<http://package.elm-lang.org/packages/pablen/toasty/latest>
 
 Sort public chats by name.
 
-Enter/Return should auto-press "New" or "Join" button.
-
-Don't delete public chats until necessary to satisfy limit. Admin mode to enable deleting them by hand. Clear creator when he disconnects. Let him delete the public game when he leaves, if nobody else is in it.
-
-Don't allow blank public chat name.
+If the server goes down, LeaveChatReq should time out and clean up the client connection. Timeout sends, too. And joins.
 
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first.
 
-If the server goes down, LeaveChatReq should time out and clean up the client connection.
+Enter/Return should auto-press "New" or "Join" button.
+
+System notifications on receipt while window not showing:
+This is actually a new port module to publish as a package.
+<https://developer.mozilla.org/en-US/docs/Web/API/notification>
+
+Don't delete public chats until necessary to satisfy limit. Admin mode to enable deleting them by hand. Clear creator when he disconnects. Let him delete the public game when he leaves, if nobody else is in it.
+
+Delete an idle private chat with only one member after a long timeout, e.g. an hour.
+
+Don't allow blank public chat name.
 
 Write code notes in src/README.md
 
@@ -326,6 +335,19 @@ newChatInfo model =
     )
 
 
+infoSettings : ChatInfo -> Model -> ElmChat.Settings Msg
+infoSettings info model =
+    case model.currentChat of
+        Nothing ->
+            info.settings
+
+        Just chat ->
+            if chat.chatid == model.chatid then
+                model.settings
+            else
+                info.settings
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -521,7 +543,7 @@ update msg model =
                                                 )
 
                         ( settings1, cmd ) =
-                            ElmChat.addChat model.settings
+                            ElmChat.addChat settings
                                 (memberName ++ ": " ++ message)
                     in
                     ( { model
@@ -580,15 +602,7 @@ update msg model =
                                             }
 
                                         settings =
-                                            case model.currentChat of
-                                                Nothing ->
-                                                    info2.settings
-
-                                                Just chat ->
-                                                    if chat.chatid == chatid then
-                                                        model.settings
-                                                    else
-                                                        info2.settings
+                                            infoSettings info2 model
 
                                         chats =
                                             updateChats model
@@ -606,7 +620,7 @@ update msg model =
                                         ! [ switchPageCmd MainPage ]
 
                         Nothing ->
-                            -- New member for existing chat
+                            -- New other member for existing chat
                             case Dict.get chatid model.chats of
                                 Nothing ->
                                     { model
@@ -622,17 +636,31 @@ update msg model =
                                                 | otherMembers =
                                                     memberName :: info.otherMembers
                                             }
+
+                                        settings =
+                                            infoSettings info2 model
+
+                                        ( settings1, cmd ) =
+                                            ElmChat.addChat settings
+                                                (memberName ++ " joined the chat.")
+
+                                        info3 =
+                                            { info2 | settings = settings1 }
                                     in
                                     { model
                                         | chats =
-                                            Dict.insert chatid info2 model.chats
+                                            Dict.insert chatid info3 model.chats
                                         , currentChat =
-                                            newCurrentChat model info2
-                                        , chatid = info2.chatid
+                                            newCurrentChat model info3
                                         , proxyServer = updateProxy model interface
                                         , error = Nothing
                                     }
-                                        ! [ switchPageCmd MainPage ]
+                                        ! [ switchPageCmd MainPage
+                                          , if chatid == model.chatid then
+                                                cmd
+                                            else
+                                                Cmd.none
+                                          ]
 
                 LeaveChatRsp { chatid, memberName } ->
                     case Dict.get chatid model.chats of
@@ -657,17 +685,30 @@ update msg model =
                                                 LE.remove memberName info.otherMembers
                                             , server = interface
                                         }
+
+                                    settings =
+                                        infoSettings info2 model
+
+                                    ( settings1, cmd ) =
+                                        ElmChat.addChat settings
+                                            (memberName ++ " left the chat.")
+
+                                    info3 =
+                                        { info2 | settings = settings1 }
                                 in
                                 { model
                                     | chats =
-                                        Dict.insert chatid info2 model.chats
+                                        Dict.insert chatid info3 model.chats
                                     , currentChat =
-                                        newCurrentChat model info2
-                                    , chatid = info2.chatid
+                                        newCurrentChat model info3
                                     , proxyServer = updateProxy model interface
                                     , error = Nothing
                                 }
-                                    ! []
+                                    ! [ if chatid == model.chatid then
+                                            cmd
+                                        else
+                                            Cmd.none
+                                      ]
                             else
                                 let
                                     members =
