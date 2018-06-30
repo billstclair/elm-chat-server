@@ -14,11 +14,23 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Public games aren't auto-deleting yet.
+Multi-window chat doesn't always echo in all windows. Typing in the window of the chat originator doesn't echo in the other windows.
 
-Limit total number of chats. Delete LRU empty public chats to make room.
+Only print the message from ErrorRsp.
 
-Persistence. Retry joining private chats and creation of public chats. Maybe an attempt to join a private chat that no longer exists should create it.
+Notify of receipt of message or joins on invisibe chats.
+
+Sort public chats by name.
+
+Join and leave message should appear in chat window.
+
+Enter/Return should auto-press "New" or "Join" button.
+
+Hide/Show Instructions button.
+
+Don't delete public chats until necessary to satisfy limit.
+
+Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first.
 
 If the server goes down, LeaveChatReq should time out and clean up the client connection.
 
@@ -719,6 +731,13 @@ update msg model =
 
                 GetPublicChatsRsp { chats } ->
                     { model | publicChats = chats }
+                        ! []
+
+                ErrorRsp { message } ->
+                    { model
+                        | error = Just message
+                        , pendingChat = Nothing
+                    }
                         ! []
 
                 _ ->

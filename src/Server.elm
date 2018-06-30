@@ -41,14 +41,9 @@ import WebSocketFramework.Server
         , Socket
         , UserFunctions
         , WrappedModel(..)
-        , newGameid
-        , newPlayerid
         , otherSockets
-        , removePlayer
         , sendToMany
         , sendToOne
-        , updateGameAndPlayerids
-        , updatePlayerid
         , verbose
         )
 import WebSocketFramework.Types
@@ -132,72 +127,46 @@ messageSender model socket state request response =
 
                 Just oldmid ->
                     let
-                        ( mdl, cid, mid ) =
-                            case request of
-                                NewChatReq _ ->
-                                    updateGameAndPlayerids model socket chatid oldmid
-
-                                _ ->
-                                    updatePlayerid model socket chatid oldmid
-                    in
-                    let
                         (WrappedModel m1) =
-                            mdl
+                            model
 
                         m =
-                            { m1
-                                | state =
-                                    replaceMemberid cid oldmid mid m1.state
-                                , deathRowDuration = settings.deathRowDuration
-                            }
+                            -- deathRowDuration change is temporary
+                            { m1 | deathRowDuration = settings.deathRowDuration }
                     in
-                    -- deathRowDuration change is temporary
                     WrappedModel m
                         ! [ sendToOne
-                                (verbose mdl)
+                                (verbose model)
                                 messageEncoder
-                                (JoinChatRsp
-                                    { joinrsp
-                                        | chatid = cid
-                                        , memberid = Just mid
-                                    }
-                                )
+                                response
                                 outputPort
                                 socket
-                          , case otherSockets cid socket model of
+                          , case otherSockets chatid socket model of
                                 [] ->
                                     Cmd.none
 
                                 sockets ->
-                                    sendToMany (verbose mdl)
+                                    sendToMany (verbose model)
                                         messageEncoder
                                         (JoinChatRsp
                                             { joinrsp
-                                                | chatid = cid
-                                                , memberid = Nothing
+                                                | memberid = Nothing
                                             }
                                         )
                                         outputPort
                                         sockets
                           ]
 
-        LeaveChatRsp { chatid, memberName } ->
-            case request of
-                LeaveChatReq { memberid } ->
-                    -- Change False to True if preserving a public game
-                    removePlayer model chatid memberid False
-                        ! [ sendToMany (verbose model)
-                                messageEncoder
-                                response
-                                outputPort
-                            <|
-                                socket
-                                    :: otherSockets chatid socket model
-                          ]
-
-                _ ->
-                    -- Can't happpen
-                    model ! []
+        LeaveChatRsp { chatid } ->
+            model
+                ! [ sendToMany (verbose model)
+                        messageEncoder
+                        response
+                        outputPort
+                    <|
+                        socket
+                            :: otherSockets chatid socket model
+                  ]
 
         _ ->
             model
@@ -207,36 +176,6 @@ messageSender model socket state request response =
                         outputPort
                         socket
                   ]
-
-
-replaceMemberid : GameId -> PlayerId -> PlayerId -> ServerState GameState player -> ServerState GameState player
-replaceMemberid gameid oldmid mid state =
-    case Dict.get gameid state.gameDict of
-        Nothing ->
-            state
-
-        Just gamestate ->
-            let
-                members =
-                    List.map
-                        (\pair ->
-                            let
-                                ( id, name ) =
-                                    pair
-                            in
-                            if id == oldmid then
-                                ( mid, name )
-                            else
-                                pair
-                        )
-                        gamestate.members
-            in
-            { state
-                | gameDict =
-                    Dict.insert gameid
-                        { gamestate | members = members }
-                        state.gameDict
-            }
 
 
 messageToGameid : Message -> Maybe GameId

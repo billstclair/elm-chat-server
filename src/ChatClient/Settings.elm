@@ -26,6 +26,6 @@ type alias Settings =
 settings : Settings
 settings =
     { deathRowDuration = 30 * Time.second
-    , maxPublicChats = 2
-    , maxChats = 3
+    , maxPublicChats = 20
+    , maxChats = 100
     }
