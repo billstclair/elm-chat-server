@@ -207,23 +207,25 @@ messageProcessor state message =
 
                                 state2 =
                                     if members == [] then
-                                        ServerInterface.removeGame info.gameid
+                                        ServerInterface.removeGame
+                                            info.gameid
                                             (List.map Tuple.first
                                                 gamestate.members
                                             )
                                             state
                                     else
-                                        { state
-                                            | gameDict =
-                                                Dict.insert
-                                                    info.gameid
-                                                    { gamestate
-                                                        | members = members
-                                                    }
-                                                    state.gameDict
-                                        }
+                                        ServerInterface.removePlayer memberid
+                                            { state
+                                                | gameDict =
+                                                    Dict.insert
+                                                        info.gameid
+                                                        { gamestate
+                                                            | members = members
+                                                        }
+                                                        state.gameDict
+                                            }
                             in
-                            ( ServerInterface.removePlayer memberid state2
+                            ( state2
                             , Just <|
                                 LeaveChatRsp
                                     { chatid = info.gameid

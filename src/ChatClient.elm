@@ -101,7 +101,7 @@ subscriptions model =
             )
         <|
             Dict.toList <|
-                log "connectedServers" model.connectedServers
+                model.connectedServers
 
 
 type WhichPage
@@ -111,10 +111,9 @@ type WhichPage
 
 type alias ChatInfo =
     { chatName : String
-    , memberNames : List MemberName
+    , members : List ( PlayerId, MemberName )
     , server : Server
     , chatid : GameId
-    , memberids : List PlayerId
     , otherMembers : List MemberName
     , isPublic : Bool
     , settings : ElmChat.Settings Msg
@@ -166,6 +165,7 @@ type Msg
     | LeaveChat PlayerId
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
+    | RefreshPublicChats
     | WebSocketMessage Server String
     | Receive Server Message
 
@@ -302,10 +302,9 @@ newChatInfo model =
     in
     ( mdl
     , { chatName = model.chatName
-      , memberNames = []
+      , members = []
       , server = server
       , chatid = ""
-      , memberids = []
       , otherMembers = []
       , isPublic = False
       , settings = emptySettings
@@ -327,7 +326,14 @@ update msg model =
             { model | server = server } ! []
 
         SetIsRemote isRemote ->
-            { model | isRemote = isRemote } ! []
+            let
+                mdl =
+                    { model | isRemote = isRemote }
+            in
+            if mdl.whichPage == PublicChatsPage then
+                update RefreshPublicChats mdl
+            else
+                mdl ! []
 
         SetChatName name ->
             { model | chatName = name } ! []
@@ -429,6 +435,13 @@ update msg model =
                             }
                   ]
 
+        RefreshPublicChats ->
+            let
+                ( mdl2, server ) =
+                    getServer model
+            in
+            mdl2 ! [ send server mdl2 GetPublicChatsReq ]
+
         ChatUpdate settings cmd ->
             ( { model | settings = settings }
             , cmd
@@ -460,7 +473,7 @@ update msg model =
                     update (Receive server message) model
 
         Receive interface message ->
-            case log "Receive" message of
+            case message of
                 ReceiveRsp { chatid, memberName, message } ->
                     let
                         ( settings, isVisible, chat, updateChats ) =
@@ -536,17 +549,16 @@ update msg model =
                                             { info
                                                 | server = interface
                                                 , chatid = chatid
-                                                , memberids =
-                                                    id :: info.memberids
-                                                , memberNames =
-                                                    memberName :: info.memberNames
+                                                , members =
+                                                    ( id, memberName ) :: info.members
                                                 , otherMembers =
+                                                    let
+                                                        names =
+                                                            List.map Tuple.second
+                                                                info.members
+                                                    in
                                                     LE.filterNot
-                                                        (\m ->
-                                                            List.member
-                                                                m
-                                                                info.memberNames
-                                                        )
+                                                        (\m -> List.member m names)
                                                         otherMembers
                                                 , isPublic = isPublic
                                             }
@@ -601,6 +613,7 @@ update msg model =
                                         , currentChat =
                                             newCurrentChat model info2
                                         , chatid = info2.chatid
+                                        , proxyServer = updateProxy model interface
                                         , error = Nothing
                                     }
                                         ! [ switchPageCmd MainPage ]
@@ -615,7 +628,11 @@ update msg model =
                                 ! []
 
                         Just info ->
-                            if not <| List.member memberName info.memberNames then
+                            let
+                                names =
+                                    List.map Tuple.second info.members
+                            in
+                            if not <| List.member memberName names then
                                 -- Another member left
                                 let
                                     info2 =
@@ -638,15 +655,11 @@ update msg model =
                             else
                                 let
                                     members =
-                                        LE.remove memberName info.memberNames
-
-                                    ids =
-                                        case LE.elemIndex memberName info.memberNames of
-                                            Nothing ->
-                                                info.memberids
-
-                                            Just idx ->
-                                                LE.removeAt idx info.memberids
+                                        LE.filterNot
+                                            (\( _, name ) ->
+                                                name == memberName
+                                            )
+                                            info.members
 
                                     ( chats, current, settings, servers ) =
                                         if members == [] then
@@ -674,8 +687,7 @@ update msg model =
                                             let
                                                 chat =
                                                     { info
-                                                        | memberNames = members
-                                                        , memberids = ids
+                                                        | members = members
                                                         , server = interface
                                                     }
                                             in
@@ -979,8 +991,8 @@ currentChatRows model =
                 , [ tr
                         [ th "Chat: "
                         , td [ chatSelector model info ]
-                        , case info.memberids of
-                            [ id ] ->
+                        , case info.members of
+                            [ ( id, _ ) ] ->
                                 td
                                     [ button [ onClick <| LeaveChat id ]
                                         [ text "Leave" ]
@@ -1019,10 +1031,10 @@ inputRows : Model -> ChatInfo -> List (Html Msg)
 inputRows model info =
     let
         onlyone =
-            Just [] == List.tail info.memberNames
+            Just [] == List.tail info.members
     in
-    List.map2
-        (\id name ->
+    List.map
+        (\( id, name ) ->
             tr
                 [ th <| name ++ ": "
                 , Html.td [ colspan 2 ]
@@ -1041,8 +1053,7 @@ inputRows model info =
                         ]
                 ]
         )
-        info.memberids
-        info.memberNames
+        info.members
 
 
 onChange : (String -> msg) -> Attribute msg
@@ -1179,6 +1190,14 @@ viewPublicChatsPage model =
                         , text " "
                         , button [ onClick NewPublicChat ]
                             [ text "New" ]
+                        ]
+                    ]
+                , tr
+                    [ th ""
+                    , td [ text "" ]
+                    , td
+                        [ button [ onClick RefreshPublicChats ]
+                            [ text "Refresh" ]
                         ]
                     ]
                 ]
