@@ -303,6 +303,15 @@ newPublicChatReq state memberName chatName =
                                 ++ " public chats."
                         }
                 )
+            else if String.length chatName == 0 then
+                ( state
+                , Just <|
+                    ErrorRsp
+                        { kind = InvalidPublicGameNameError
+                        , message =
+                            "Public chat name may not be blank."
+                        }
+                )
             else
                 newPublicChatReqInternal state memberName chatName
 

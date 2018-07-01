@@ -64,6 +64,7 @@ type ErrorKind
     | UnknownMemberidError { memberid : PlayerId }
     | TooManyGamesError
     | TooManyPublicGamesError
+    | InvalidPublicGameNameError
     | UnknownRequestError { request : String }
 
 

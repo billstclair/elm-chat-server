@@ -191,6 +191,10 @@ protocolData =
         , message = "Too many public games!"
         }
     , ErrorRsp
+        { kind = InvalidPublicGameNameError
+        , message = "Wash your mouth right out with soap."
+        }
+    , ErrorRsp
         { kind =
             UnknownRequestError
                 { request = "frobluate"

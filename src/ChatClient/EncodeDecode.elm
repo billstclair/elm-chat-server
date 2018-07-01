@@ -168,6 +168,10 @@ encodeErrorKind kind =
             JE.object
                 [ ( "kind", JE.string "TooManyPublicGamesError" ) ]
 
+        InvalidPublicGameNameError ->
+            JE.object
+                [ ( "kind", JE.string "InvalidPublicGameNameError" ) ]
+
         UnknownRequestError { request } ->
             JE.object
                 [ ( "kind", JE.string "UnknownRequestError" )
@@ -419,6 +423,9 @@ errorKindStringDecoder kind =
 
         "TooManyPublicGamesError" ->
             JD.succeed TooManyPublicGamesError
+
+        "InvalidPublicGameNameError" ->
+            JD.succeed InvalidPublicGameNameError
 
         "UnknownRequestError" ->
             JD.map

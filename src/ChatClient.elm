@@ -38,8 +38,7 @@ This is actually a new port module to publish as a package.
 Don't delete public chats until necessary to satisfy limit. Admin mode to enable deleting them by hand. Clear creator when he disconnects. Let him delete the public game when he leaves, if nobody else is in it.
 
 Delete an idle private chat with only one member after a long timeout, e.g. an hour.
-
-Don't allow blank public chat name.
+Or maybe delete it only if somebody tries to make a new one, and we've already reached the max.
 
 Write code notes in src/README.md
 
@@ -369,6 +368,7 @@ update msg model =
                 Just info ->
                     { model
                         | currentChat = chatid
+                        , chatid = chatid
                         , error = Nothing
                     }
                         ! [ ElmChat.restoreScroll info.settings ]
@@ -638,7 +638,7 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                         , currentChat = chatid
                         , chatid = chatid
                     }
-                        ! []
+                        ! [ switchPageCmd MainPage ]
 
 
 leaveChatRsp : GameId -> MemberName -> Model -> ( Model, Cmd Msg )
