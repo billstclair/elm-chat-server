@@ -579,50 +579,64 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
             in
             case model.pendingChat of
                 NoPendingChat ->
-                    { model
+                    { mdl
                         | error =
                             Just "JoinChatRsp for unknown chat."
                     }
                         ! []
 
-                ExistingPendingChat chatid ->
-                    -- New local member for existing chat
-                    case Dict.get chatid mdl.chats of
-                        Nothing ->
-                            { mdl
-                                | error =
-                                    Just <|
-                                        "Can't find pending chat for id: "
-                                            ++ chatid
-                            }
-                                ! []
+                ExistingPendingChat chtid ->
+                    if chtid /= chatid then
+                        { mdl
+                            | error =
+                                Just <|
+                                    "Requested join of chatid: "
+                                        ++ chtid
+                                        ++ ", got: "
+                                        ++ chatid
+                        }
+                            ! []
+                    else
+                        -- New local member for existing chat
+                        case Dict.get chatid mdl.chats of
+                            Nothing ->
+                                { mdl
+                                    | error =
+                                        Just <|
+                                            "Can't find pending chat for id: "
+                                                ++ chatid
+                                }
+                                    ! []
 
-                        Just info ->
-                            let
-                                info2 =
-                                    { info
-                                        | members =
-                                            ( id, memberName ) :: info.members
-                                    }
-                            in
-                            { mdl
-                                | chats =
-                                    Dict.insert chatid info2 model.chats
-                            }
-                                ! []
+                            Just info ->
+                                let
+                                    info2 =
+                                        { info
+                                            | members =
+                                                ( id, memberName ) :: info.members
+                                        }
+                                in
+                                { mdl
+                                    | chats =
+                                        Dict.insert chatid info2 mdl.chats
+                                }
+                                    ! []
 
                 NewPendingChat info ->
                     -- Newly create chat
                     let
                         info2 =
                             { info
-                                | members = [ ( id, memberName ) ]
+                                | chatid = chatid
+                                , members = [ ( id, memberName ) ]
                                 , otherMembers = otherMembers
                             }
                     in
                     { mdl
                         | chats =
-                            Dict.insert chatid info2 model.chats
+                            Dict.insert chatid info2 mdl.chats
+                        , currentChat = chatid
+                        , chatid = chatid
                     }
                         ! []
 
