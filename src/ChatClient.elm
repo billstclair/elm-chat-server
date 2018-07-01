@@ -21,9 +21,13 @@ Mark the chats with activity in the "Chat:" <select>
 
 Sort public chats by name.
 
+Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
+
+Move gamePlayersDict from Server Model to ServerInterface ServerState.
+
 If the server goes down, LeaveChatReq should time out and clean up the client connection. Timeout sends, too. And joins.
 
-Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first.
+Limit number of participants in a chat to something large, but which will limit DoS attacks at least a little bit.
 
 Enter/Return should auto-press "New" or "Join" button.
 
@@ -48,6 +52,7 @@ import ChatClient.Types
     exposing
         ( GameState
         , MemberName
+        , MemberNames
         , Message(..)
         , Player
         , PublicChat
@@ -127,7 +132,7 @@ type WhichPage
 type alias ChatInfo =
     { chatName : String
     , members : List ( PlayerId, MemberName )
-    , server : Server
+    , server : Maybe Server
     , chatid : GameId
     , otherMembers : List MemberName
     , isPublic : Bool
@@ -135,32 +140,29 @@ type alias ChatInfo =
     }
 
 
+type PendingChat
+    = NoPendingChat
+    | ExistingPendingChat GameId
+    | NewPendingChat ChatInfo
+
+
 type alias Model =
     { whichPage : WhichPage
-    , settings : ElmChat.Settings Msg
     , proxyServer : Server
     , chats : Dict GameId ChatInfo
     , publicChats : List PublicChat
-    , currentChat : Maybe ChatInfo
-    , pendingChat : Maybe ChatInfo
+    , currentChat : String
+    , pendingChat : PendingChat
     , memberName : String
-    , server : String
+    , serverUrl : String
     , connectedServers : Dict String Server
     , isRemote : Bool
     , chatName : String
     , chatid : String
     , publicChatName : String
-    , gameCount : Int
     , hideHelp : Bool
     , error : Maybe String
     }
-
-
-isProxyServer : Server -> Bool
-isProxyServer server =
-    case server of
-        ServerInterface si ->
-            si.server == ""
 
 
 type Msg
@@ -169,7 +171,7 @@ type Msg
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
-    | SetServer String
+    | SetServerUrl String
     | ReceiveServerLoadFile (Result Http.Error String)
     | SetIsRemote Bool
     | SetChatName String
@@ -216,20 +218,18 @@ serverLoadFile =
 init : ( Model, Cmd Msg )
 init =
     ( { whichPage = MainPage
-      , settings = emptySettings
       , proxyServer = makeProxyServer messageProcessor Receive
       , chats = Dict.empty
       , publicChats = []
-      , currentChat = Nothing
-      , pendingChat = Nothing
+      , currentChat = ""
+      , pendingChat = NoPendingChat
       , memberName = "Nobody"
-      , server = "ws://localhost:8081"
+      , serverUrl = "ws://localhost:8081"
       , connectedServers = Dict.empty
       , isRemote = True
       , chatName = "chat"
       , chatid = ""
       , publicChatName = ""
-      , gameCount = 0
       , hideHelp = False
       , error = Nothing
       }
@@ -237,67 +237,37 @@ init =
     )
 
 
-newCurrentChat : Model -> ChatInfo -> Maybe ChatInfo
-newCurrentChat model info =
-    case model.currentChat of
-        Nothing ->
-            Nothing
-
-        Just chat ->
-            if chat.chatid == info.chatid then
-                Just info
-            else
-                model.currentChat
-
-
-updateChats : Model -> Dict GameId ChatInfo
-updateChats model =
-    case model.currentChat of
-        Nothing ->
-            model.chats
-
-        Just chat ->
+updateChats : ElmChat.Settings Msg -> ChatInfo -> Model -> Model
+updateChats settings chat model =
+    { model
+        | chats =
             Dict.insert
                 chat.chatid
                 { chat
                     | settings =
-                        model.settings
+                        settings
                 }
                 model.chats
-
-
-updateProxy : Model -> Server -> Server
-updateProxy model server =
-    if isProxyServer server then
-        server
-    else
-        model.proxyServer
+    }
 
 
 send : Server -> Model -> Message -> Cmd Msg
 send server model message =
-    let
-        s =
-            if isProxyServer server then
-                model.proxyServer
-            else
-                server
-    in
     WebSocketFramework.send server <| log "send" message
 
 
-getServer : Model -> ( Model, Server )
+getServer : Model -> ( Model, Maybe Server )
 getServer model =
     if not model.isRemote then
-        ( model, model.proxyServer )
+        ( model, Nothing )
     else
         let
             url =
-                model.server
+                model.serverUrl
         in
         case Dict.get url model.connectedServers of
             Just server ->
-                ( model, server )
+                ( model, Just server )
 
             Nothing ->
                 let
@@ -308,11 +278,11 @@ getServer model =
                     | connectedServers =
                         Dict.insert url server model.connectedServers
                   }
-                , server
+                , Just server
                 )
 
 
-newChatInfo : Model -> ( Model, ChatInfo, Server )
+newChatInfo : Model -> ( Model, ChatInfo )
 newChatInfo model =
     let
         ( mdl, server ) =
@@ -327,21 +297,17 @@ newChatInfo model =
       , isPublic = False
       , settings = emptySettings
       }
-    , server
     )
 
 
-infoSettings : ChatInfo -> Model -> ElmChat.Settings Msg
-infoSettings info model =
-    case model.currentChat of
+chatServer : ChatInfo -> Model -> Server
+chatServer info model =
+    case info.server of
         Nothing ->
-            info.settings
+            model.proxyServer
 
-        Just chat ->
-            if chat.chatid == model.chatid then
-                model.settings
-            else
-                info.settings
+        Just s ->
+            s
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -353,8 +319,8 @@ update msg model =
         SetMemberName name ->
             { model | memberName = name } ! []
 
-        SetServer server ->
-            { model | server = server } ! []
+        SetServerUrl url ->
+            { model | serverUrl = url } ! []
 
         SetIsRemote isRemote ->
             let
@@ -383,8 +349,8 @@ update msg model =
                 Err error ->
                     model ! []
 
-                Ok server ->
-                    { model | server = server } ! []
+                Ok url ->
+                    { model | serverUrl = url } ! []
 
         SwitchPage whichPage ->
             if whichPage == model.whichPage then
@@ -395,26 +361,28 @@ update msg model =
         ChangeChat chatid ->
             case Dict.get chatid model.chats of
                 Nothing ->
-                    -- Can't happen
-                    model ! []
+                    { model
+                        | error = Just <| "Unknown chat: ChangeChat " ++ chatid
+                    }
+                        ! []
 
                 Just info ->
                     { model
-                        | currentChat = Just info
-                        , settings = info.settings
-                        , chats = updateChats model
-                        , chatid = info.chatid
+                        | currentChat = chatid
                         , error = Nothing
                     }
                         ! [ ElmChat.restoreScroll info.settings ]
 
         NewChat ->
             let
-                ( mdl, info, server ) =
+                ( mdl, info ) =
                     newChatInfo model
+
+                server =
+                    chatServer info mdl
             in
             { mdl
-                | pendingChat = Just info
+                | pendingChat = NewPendingChat info
                 , error = Nothing
             }
                 ! [ send server model <|
@@ -426,13 +394,17 @@ update msg model =
             joinChat model.chatid model
 
         LeaveChat memberid ->
-            case model.currentChat of
+            case Dict.get model.currentChat model.chats of
                 Nothing ->
                     model ! []
 
                 Just info ->
+                    let
+                        server =
+                            chatServer info model
+                    in
                     model
-                        ! [ send info.server model <|
+                        ! [ send server model <|
                                 LeaveChatReq
                                     { memberid = memberid }
                           ]
@@ -451,15 +423,18 @@ update msg model =
 
         NewPublicChat ->
             let
-                ( mdl, info, server ) =
+                ( mdl, info ) =
                     newChatInfo
                         { model
                             | chatName =
                                 model.publicChatName
                         }
+
+                server =
+                    chatServer info mdl
             in
             { mdl
-                | pendingChat = Just info
+                | pendingChat = NewPendingChat info
                 , error = Nothing
             }
                 ! [ send server model <|
@@ -471,27 +446,47 @@ update msg model =
 
         RefreshPublicChats ->
             let
-                ( mdl2, server ) =
+                ( mdl2, maybeServer ) =
                     getServer model
+
+                server =
+                    case maybeServer of
+                        Nothing ->
+                            model.proxyServer
+
+                        Just s ->
+                            s
             in
             mdl2 ! [ send server mdl2 GetPublicChatsReq ]
 
         ChatUpdate settings cmd ->
-            ( { model | settings = settings }
-            , cmd
-            )
+            case Dict.get model.currentChat model.chats of
+                Nothing ->
+                    model ! []
+
+                Just chat ->
+                    { model
+                        | chats =
+                            Dict.insert model.currentChat
+                                { chat | settings = settings }
+                                model.chats
+                    }
+                        ! [ cmd ]
 
         ChatSend memberid line settings ->
-            case model.currentChat of
+            case Dict.get model.currentChat model.chats of
                 Nothing ->
                     model ! []
 
                 Just info ->
+                    let
+                        server =
+                            chatServer info model
+                    in
                     { model
-                        | settings = settings
-                        , error = Nothing
+                        | error = Nothing
                     }
-                        ! [ send info.server model <|
+                        ! [ send server model <|
                                 SendReq
                                     { memberid = memberid
                                     , message = line
@@ -507,286 +502,267 @@ update msg model =
                     update (Receive server message) model
 
         Receive interface message ->
-            case log "Receive" message of
-                ReceiveRsp { chatid, memberName, message } ->
+            receive interface message model
+
+
+receiveRsp : GameId -> MemberName -> String -> Model -> ( Model, Cmd Msg )
+receiveRsp chatid memberName message model =
+    case Dict.get chatid model.chats of
+        Nothing ->
+            model ! []
+
+        Just chat ->
+            let
+                ( settings1, cmd ) =
+                    ElmChat.addChat chat.settings
+                        (memberName ++ ": " ++ message)
+            in
+            ( { model
+                | chats =
+                    Dict.insert
+                        chatid
+                        { chat | settings = settings1 }
+                        model.chats
+                , error = Nothing
+              }
+            , if chatid == model.currentChat then
+                cmd
+              else
+                Cmd.none
+            )
+
+
+joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Model -> ( Model, Cmd Msg )
+joinChatRsp chatid memberid memberName otherMembers isPublic model =
+    case memberid of
+        Nothing ->
+            -- Remote member just joined. Ignore model.pendingChat
+            case Dict.get chatid model.chats of
+                Nothing ->
+                    { model
+                        | error =
+                            Just "JoinChatRsp for unknown chat."
+                    }
+                        ! []
+
+                Just info ->
                     let
-                        ( settings, isVisible, chat, updateChats ) =
-                            case model.currentChat of
-                                Nothing ->
-                                    let
-                                        ( _, chat, _ ) =
-                                            newChatInfo model
-                                    in
-                                    ( emptySettings, False, chat, False )
+                        info2 =
+                            { info
+                                | otherMembers =
+                                    memberName :: info.otherMembers
+                            }
 
-                                Just chat ->
-                                    if chat.chatid == chatid then
-                                        ( model.settings, True, chat, False )
-                                    else
-                                        case Dict.get chatid model.chats of
-                                            Nothing ->
-                                                ( emptySettings
-                                                , False
-                                                , chat
-                                                , False
-                                                )
+                        ( settings, cmd ) =
+                            ElmChat.addChat info2.settings
+                                (memberName ++ " joined the chat.")
 
-                                            Just invchat ->
-                                                ( invchat.settings
-                                                , False
-                                                , invchat
-                                                , True
-                                                )
-
-                        ( settings1, cmd ) =
-                            ElmChat.addChat settings
-                                (memberName ++ ": " ++ message)
+                        info3 =
+                            { info2 | settings = settings }
                     in
-                    ( { model
-                        | settings =
-                            if isVisible then
-                                settings1
-                            else
-                                model.settings
-                        , chats =
-                            if not updateChats then
-                                model.chats
-                            else
-                                Dict.insert
-                                    chatid
-                                    { chat | settings = settings1 }
-                                    model.chats
-                        , proxyServer = updateProxy model interface
+                    { model
+                        | chats =
+                            Dict.insert chatid info3 model.chats
                         , error = Nothing
-                      }
-                    , if isVisible then
-                        cmd
-                      else
-                        Cmd.none
-                    )
+                    }
+                        ! [ switchPageCmd MainPage
+                          , if chatid == model.currentChat then
+                                cmd
+                            else
+                                Cmd.none
+                          ]
 
-                JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
-                    case memberid of
-                        Just id ->
-                            -- It's a new chat, or a second member
-                            case model.pendingChat of
-                                Nothing ->
-                                    { model
-                                        | error =
-                                            Just "Got a join response with no pending request."
-                                    }
-                                        ! []
+        Just id ->
+            let
+                mdl =
+                    { model | pendingChat = NoPendingChat }
+            in
+            case model.pendingChat of
+                NoPendingChat ->
+                    { model
+                        | error =
+                            Just "JoinChatRsp for unknown chat."
+                    }
+                        ! []
 
-                                Just info ->
-                                    let
-                                        info2 =
-                                            { info
-                                                | server = interface
-                                                , chatid = chatid
-                                                , members =
-                                                    ( id, memberName ) :: info.members
-                                                , otherMembers =
-                                                    let
-                                                        names =
-                                                            List.map Tuple.second
-                                                                info.members
-                                                    in
-                                                    LE.filterNot
-                                                        (\m -> List.member m names)
-                                                        otherMembers
-                                                , isPublic = isPublic
-                                            }
-
-                                        settings =
-                                            infoSettings info2 model
-
-                                        chats =
-                                            updateChats model
-                                    in
-                                    { model
-                                        | settings = settings
-                                        , proxyServer = updateProxy model interface
-                                        , currentChat = Just info2
-                                        , pendingChat = Nothing
-                                        , chats =
-                                            Dict.insert chatid info2 chats
-                                        , chatid = chatid
-                                        , error = Nothing
-                                    }
-                                        ! [ switchPageCmd MainPage ]
-
+                ExistingPendingChat chatid ->
+                    -- New local member for existing chat
+                    case Dict.get chatid mdl.chats of
                         Nothing ->
-                            -- New other member for existing chat
-                            case Dict.get chatid model.chats of
-                                Nothing ->
-                                    { model
-                                        | error =
-                                            Just "JoinChatRsp for unknown chat."
-                                    }
-                                        ! []
-
-                                Just info ->
-                                    let
-                                        info2 =
-                                            { info
-                                                | otherMembers =
-                                                    memberName :: info.otherMembers
-                                            }
-
-                                        settings =
-                                            infoSettings info2 model
-
-                                        ( settings1, cmd ) =
-                                            ElmChat.addChat settings
-                                                (memberName ++ " joined the chat.")
-
-                                        info3 =
-                                            { info2 | settings = settings1 }
-                                    in
-                                    { model
-                                        | chats =
-                                            Dict.insert chatid info3 model.chats
-                                        , currentChat =
-                                            newCurrentChat model info3
-                                        , proxyServer = updateProxy model interface
-                                        , error = Nothing
-                                    }
-                                        ! [ switchPageCmd MainPage
-                                          , if chatid == model.chatid then
-                                                cmd
-                                            else
-                                                Cmd.none
-                                          ]
-
-                LeaveChatRsp { chatid, memberName } ->
-                    case Dict.get chatid model.chats of
-                        Nothing ->
-                            { model
+                            { mdl
                                 | error =
-                                    Just "LeaveChatRsp received for unknown chat."
+                                    Just <|
+                                        "Can't find pending chat for id: "
+                                            ++ chatid
                             }
                                 ! []
 
                         Just info ->
                             let
-                                names =
-                                    List.map Tuple.second info.members
+                                info2 =
+                                    { info
+                                        | members =
+                                            ( id, memberName ) :: info.members
+                                    }
                             in
-                            if not <| List.member memberName names then
-                                -- Another member left
-                                let
-                                    info2 =
-                                        { info
-                                            | otherMembers =
-                                                LE.remove memberName info.otherMembers
-                                            , server = interface
-                                        }
+                            { mdl
+                                | chats =
+                                    Dict.insert chatid info2 model.chats
+                            }
+                                ! []
 
-                                    settings =
-                                        infoSettings info2 model
-
-                                    ( settings1, cmd ) =
-                                        ElmChat.addChat settings
-                                            (memberName ++ " left the chat.")
-
-                                    info3 =
-                                        { info2 | settings = settings1 }
-                                in
-                                { model
-                                    | chats =
-                                        Dict.insert chatid info3 model.chats
-                                    , currentChat =
-                                        newCurrentChat model info3
-                                    , proxyServer = updateProxy model interface
-                                    , error = Nothing
-                                }
-                                    ! [ if chatid == model.chatid then
-                                            cmd
-                                        else
-                                            Cmd.none
-                                      ]
-                            else
-                                let
-                                    members =
-                                        LE.filterNot
-                                            (\( _, name ) ->
-                                                name == memberName
-                                            )
-                                            info.members
-
-                                    ( chats, current, settings, servers ) =
-                                        if members == [] then
-                                            let
-                                                chats =
-                                                    Dict.remove chatid model.chats
-
-                                                current =
-                                                    List.head <| Dict.values chats
-
-                                                servers =
-                                                    computeConnectedServers chats
-                                            in
-                                            ( chats
-                                            , current
-                                            , case current of
-                                                Nothing ->
-                                                    emptySettings
-
-                                                Just chat ->
-                                                    chat.settings
-                                            , servers
-                                            )
-                                        else
-                                            let
-                                                chat =
-                                                    { info
-                                                        | members = members
-                                                        , server = interface
-                                                    }
-                                            in
-                                            ( Dict.insert
-                                                chatid
-                                                chat
-                                                model.chats
-                                            , newCurrentChat model chat
-                                            , model.settings
-                                            , model.connectedServers
-                                            )
-                                in
-                                { model
-                                    | currentChat = current
-                                    , chats = chats
-                                    , settings = settings
-                                    , connectedServers = servers
-                                    , proxyServer = updateProxy model interface
-                                    , error = Nothing
-                                    , chatid =
-                                        case current of
-                                            Just info ->
-                                                info.chatid
-
-                                            Nothing ->
-                                                model.chatid
-                                }
-                                    ! []
-
-                GetPublicChatsRsp { chats } ->
-                    { model | publicChats = chats }
-                        ! []
-
-                ErrorRsp { message } ->
-                    { model
-                        | error = Just message
-                        , pendingChat = Nothing
+                NewPendingChat info ->
+                    -- Newly create chat
+                    let
+                        info2 =
+                            { info
+                                | members = [ ( id, memberName ) ]
+                                , otherMembers = otherMembers
+                            }
+                    in
+                    { mdl
+                        | chats =
+                            Dict.insert chatid info2 model.chats
                     }
                         ! []
 
-                _ ->
-                    { model
-                        | error = Just <| toString message
-                        , pendingChat = Nothing
-                    }
-                        ! []
+
+leaveChatRsp : GameId -> MemberName -> Model -> ( Model, Cmd Msg )
+leaveChatRsp chatid memberName model =
+    case Dict.get chatid model.chats of
+        Nothing ->
+            { model
+                | error =
+                    Just "LeaveChatRsp received for unknown chat."
+            }
+                ! []
+
+        Just info ->
+            let
+                names =
+                    List.map Tuple.second info.members
+            in
+            if not <| List.member memberName names then
+                -- Another member left
+                let
+                    ( settings, cmd ) =
+                        ElmChat.addChat info.settings
+                            (memberName ++ " left the chat.")
+
+                    info2 =
+                        { info
+                            | settings = settings
+                            , otherMembers =
+                                LE.remove memberName info.otherMembers
+                        }
+                in
+                { model
+                    | chats =
+                        Dict.insert chatid info2 model.chats
+                    , currentChat = chatid
+                    , error = Nothing
+                }
+                    ! [ if chatid == model.chatid then
+                            cmd
+                        else
+                            Cmd.none
+                      ]
+            else
+                -- A local member left
+                let
+                    members =
+                        LE.filterNot
+                            (\( _, name ) ->
+                                name == memberName
+                            )
+                            info.members
+
+                    ( chats, current, servers ) =
+                        if members == [] then
+                            let
+                                chats =
+                                    Dict.remove chatid model.chats
+
+                                newChat =
+                                    List.head <| Dict.values chats
+
+                                servers =
+                                    computeConnectedServers chats
+                            in
+                            ( chats
+                            , case newChat of
+                                Nothing ->
+                                    ""
+
+                                Just chat ->
+                                    chat.chatid
+                            , servers
+                            )
+                        else
+                            let
+                                chat =
+                                    { info
+                                        | members = members
+                                    }
+                            in
+                            ( Dict.insert
+                                chatid
+                                chat
+                                model.chats
+                            , chatid
+                            , model.connectedServers
+                            )
+                in
+                { model
+                    | currentChat = current
+                    , chats = chats
+                    , connectedServers = servers
+                    , error = Nothing
+                    , chatid =
+                        if current == "" then
+                            model.chatid
+                        else
+                            current
+                }
+                    ! []
+
+
+receive : Server -> Message -> Model -> ( Model, Cmd Msg )
+receive interface message model =
+    let
+        mdl =
+            if isProxyServer interface then
+                { model | proxyServer = interface }
+            else
+                model
+    in
+    case log "Receive" message of
+        ReceiveRsp { chatid, memberName, message } ->
+            receiveRsp chatid memberName message model
+
+        JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
+            joinChatRsp chatid memberid memberName otherMembers isPublic model
+
+        LeaveChatRsp { chatid, memberName } ->
+            leaveChatRsp chatid memberName model
+
+        GetPublicChatsRsp { chats } ->
+            { mdl | publicChats = chats }
+                ! []
+
+        ErrorRsp { message } ->
+            { mdl
+                | error = Just message
+                , pendingChat = NoPendingChat
+            }
+                ! []
+
+        _ ->
+            { mdl
+                | error = Just <| toString message
+                , pendingChat = NoPendingChat
+            }
+                ! []
 
 
 switchPageCmd : WhichPage -> Cmd Msg
@@ -800,7 +776,7 @@ switchPage whichPage model =
         isPublic =
             whichPage == PublicChatsPage
 
-        ( mdl, server ) =
+        ( mdl, maybeServer ) =
             if isPublic && model.isRemote then
                 getServer model
             else
@@ -808,8 +784,16 @@ switchPage whichPage model =
                     | connectedServers =
                         computeConnectedServers model.chats
                   }
-                , model.proxyServer
+                , Nothing
                 )
+
+        server =
+            case maybeServer of
+                Nothing ->
+                    model.proxyServer
+
+                Just s ->
+                    s
 
         mdl2 =
             { mdl
@@ -829,23 +813,23 @@ switchPage whichPage model =
 joinChat : GameId -> Model -> ( Model, Cmd Msg )
 joinChat chatid model =
     let
-        ( mdl, info, server ) =
+        ( ( mdl, info ), existing ) =
             case Dict.get chatid model.chats of
                 Just chat ->
-                    let
-                        server =
-                            if isProxyServer chat.server then
-                                model.proxyServer
-                            else
-                                chat.server
-                    in
-                    ( model, chat, server )
+                    ( ( model, chat ), True )
 
                 Nothing ->
-                    newChatInfo model
+                    ( newChatInfo model, False )
+
+        server =
+            chatServer info mdl
     in
     { mdl
-        | pendingChat = Just info
+        | pendingChat =
+            if existing then
+                ExistingPendingChat chatid
+            else
+                NewPendingChat info
         , error = Nothing
     }
         ! [ send server model <|
@@ -856,18 +840,27 @@ joinChat chatid model =
           ]
 
 
+isProxyServer : Server -> Bool
+isProxyServer server =
+    case server of
+        ServerInterface si ->
+            si.server == ""
+
+
 computeConnectedServers : Dict GameId ChatInfo -> Dict String Server
 computeConnectedServers chats =
     let
         serverInfo : ChatInfo -> Maybe ( String, Server )
         serverInfo =
             \{ server } ->
-                if isProxyServer server then
-                    Nothing
-                else
-                    case server of
-                        ServerInterface record ->
-                            Just ( record.server, server )
+                case server of
+                    Nothing ->
+                        Nothing
+
+                    Just interface ->
+                        case interface of
+                            ServerInterface record ->
+                                Just ( record.server, interface )
     in
     List.foldl
         (\info dict ->
@@ -875,8 +868,8 @@ computeConnectedServers chats =
                 Nothing ->
                     dict
 
-                Just ( url, server ) ->
-                    Dict.insert url server dict
+                Just ( url, interface ) ->
+                    Dict.insert url interface dict
         )
         Dict.empty
     <|
@@ -1009,8 +1002,17 @@ errorLine model =
 
 viewMainPage : Model -> Html Msg
 viewMainPage model =
+    let
+        settings =
+            case Dict.get model.currentChat model.chats of
+                Nothing ->
+                    emptySettings
+
+                Just info ->
+                    info.settings
+    in
     div []
-        [ p [] [ ElmChat.chat model.settings ]
+        [ p [] [ ElmChat.chat settings ]
         , table [] <|
             List.concat
                 [ currentChatRows model
@@ -1031,7 +1033,7 @@ viewMainPage model =
                 , p []
                     [ text "You may join as many chats as you wish. To switch between them, select the one you want from the 'Chat' selector." ]
                 , p []
-                    [ text "Click the 'Public' link at the top of the page to go to the public games page. Click 'Chat' from there to come back here."
+                    [ text "Click the 'Public' link at the top of the page to go to the public chats page. Click 'Chat' from there to come back here."
                     ]
                 , p []
                     [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
@@ -1056,7 +1058,7 @@ td body =
 
 currentChatRows : Model -> List (Html Msg)
 currentChatRows model =
-    case model.currentChat of
+    case Dict.get model.currentChat model.chats of
         Nothing ->
             []
 
@@ -1117,7 +1119,7 @@ inputRows model info =
                         40
                         "Send"
                         (ChatSend id)
-                        model.settings
+                        info.settings
                     ]
                 , if onlyone then
                     text ""
@@ -1184,8 +1186,8 @@ serverRow model =
         , td
             [ input
                 [ type_ "text"
-                , value model.server
-                , onInput SetServer
+                , value model.serverUrl
+                , onInput SetServerUrl
                 , size 40
                 , disabled (not model.isRemote)
                 ]
