@@ -551,8 +551,10 @@ updateActivity message model =
                         [ ( _, name ) ] ->
                             if name == memberName then
                                 incrementActivityCount chatid chatName 0 model
-                            else
+                            else if chatid /= model.currentChat then
                                 incrementActivityCount chatid chatName 1 model
+                            else
+                                model
 
                         _ ->
                             if chatid /= model.currentChat then
