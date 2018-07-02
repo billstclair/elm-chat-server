@@ -21,7 +21,12 @@ import ChatClient.EncodeDecode
         ( messageDecoder
         , messageEncoder
         )
-import ChatClient.Interface exposing (messageProcessor)
+import ChatClient.Interface
+    exposing
+        ( messageProcessor
+        , messageToGameid
+        , messageToPlayerid
+        )
 import ChatClient.Settings exposing (settings)
 import ChatClient.Types
     exposing
@@ -177,46 +182,6 @@ messageSender model socket state request response =
                         outputPort
                         socket
                   ]
-
-
-messageToGameid : Message -> Maybe GameId
-messageToGameid message =
-    case message of
-        JoinChatReq { chatid } ->
-            Just chatid
-
-        JoinChatRsp { chatid } ->
-            Just chatid
-
-        ReceiveRsp { chatid } ->
-            Just chatid
-
-        LeaveChatRsp { chatid } ->
-            Just chatid
-
-        _ ->
-            Nothing
-
-
-messageToPlayerid : Message -> Maybe PlayerId
-messageToPlayerid message =
-    case message of
-        JoinChatRsp { memberid } ->
-            case memberid of
-                Nothing ->
-                    Nothing
-
-                Just mid ->
-                    Just mid
-
-        SendReq { memberid } ->
-            Just memberid
-
-        LeaveChatReq { memberid } ->
-            Just memberid
-
-        _ ->
-            Nothing
 
 
 {-| This will move into WebSocketFramework.Server

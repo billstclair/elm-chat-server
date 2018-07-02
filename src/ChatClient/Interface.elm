@@ -14,6 +14,8 @@ module ChatClient.Interface
     exposing
         ( getPublicGame
         , messageProcessor
+        , messageToGameid
+        , messageToPlayerid
         )
 
 import ChatClient.Settings exposing (settings)
@@ -404,3 +406,43 @@ newChatReqInternal state memberName =
             , isPublic = False
             }
     )
+
+
+messageToGameid : Message -> Maybe GameId
+messageToGameid message =
+    case message of
+        JoinChatReq { chatid } ->
+            Just chatid
+
+        JoinChatRsp { chatid } ->
+            Just chatid
+
+        ReceiveRsp { chatid } ->
+            Just chatid
+
+        LeaveChatRsp { chatid } ->
+            Just chatid
+
+        _ ->
+            Nothing
+
+
+messageToPlayerid : Message -> Maybe PlayerId
+messageToPlayerid message =
+    case message of
+        JoinChatRsp { memberid } ->
+            case memberid of
+                Nothing ->
+                    Nothing
+
+                Just mid ->
+                    Just mid
+
+        SendReq { memberid } ->
+            Just memberid
+
+        LeaveChatReq { memberid } ->
+            Just memberid
+
+        _ ->
+            Nothing

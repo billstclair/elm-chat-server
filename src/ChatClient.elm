@@ -14,16 +14,9 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Notify of activity on invisible chats.
-"Activity on: <list of chat names>"
-Mark the chats with activity in the "Chat:" <select>
-<http://package.elm-lang.org/packages/pablen/toasty/latest>
-
-Sort public chats by name.
-
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
 
-Move gamePlayersDict from Server Model to ServerInterface ServerState.
+Move gamePlayersDict maintenance from Server Model to ServerInterface.ServerState.
 
 If the server goes down, LeaveChatReq should time out and clean up the client connection. Timeout sends, too. And joins.
 
@@ -46,7 +39,7 @@ Write code notes in src/README.md
 
 import Char
 import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
-import ChatClient.Interface exposing (messageProcessor)
+import ChatClient.Interface exposing (messageProcessor, messageToGameid)
 import ChatClient.Types
     exposing
         ( GameState
@@ -160,6 +153,7 @@ type alias Model =
     , chatid : String
     , publicChatName : String
     , hideHelp : Bool
+    , activityDict : Dict String ( String, Int )
     , error : Maybe String
     }
 
@@ -230,6 +224,7 @@ init =
       , chatid = ""
       , publicChatName = ""
       , hideHelp = False
+      , activityDict = Dict.empty
       , error = Nothing
       }
     , Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -365,13 +360,15 @@ update msg model =
                     }
                         ! []
 
-                Just info ->
-                    { model
+                Just { chatName, settings } ->
+                    ({ model
                         | currentChat = chatid
                         , chatid = chatid
                         , error = Nothing
-                    }
-                        ! [ ElmChat.restoreScroll info.settings ]
+                     }
+                        |> incrementActivityCount chatid "" 0
+                    )
+                        ! [ ElmChat.restoreScroll settings ]
 
         NewChat ->
             let
@@ -484,7 +481,11 @@ update msg model =
                             chatServer info model
                     in
                     { model
-                        | error = Nothing
+                        | chats =
+                            Dict.insert model.currentChat
+                                { info | settings = settings }
+                                model.chats
+                        , error = Nothing
                     }
                         ! [ send server model <|
                                 SendReq
@@ -503,6 +504,115 @@ update msg model =
 
         Receive interface message ->
             receive interface message model
+
+
+incrementActivityCount : GameId -> String -> Int -> Model -> Model
+incrementActivityCount chatid chatName amount model =
+    if amount == 0 then
+        { model
+            | activityDict = Dict.remove chatid model.activityDict
+        }
+    else
+        let
+            tuple =
+                case Dict.get chatid model.activityDict of
+                    Nothing ->
+                        ( chatName, amount )
+
+                    Just ( n, a ) ->
+                        ( n, a + amount )
+        in
+        { model
+            | activityDict = Dict.insert chatid tuple model.activityDict
+        }
+
+
+updateActivity : Message -> Model -> Model
+updateActivity message model =
+    case message of
+        JoinChatRsp { chatid } ->
+            if chatid == model.currentChat then
+                model
+            else
+                case Dict.get chatid model.chats of
+                    Nothing ->
+                        model
+
+                    Just { chatName } ->
+                        incrementActivityCount chatid chatName 1 model
+
+        LeaveChatRsp { chatid, memberName } ->
+            case Dict.get chatid model.chats of
+                Nothing ->
+                    model
+
+                Just { chatName, members } ->
+                    case members of
+                        [ ( _, name ) ] ->
+                            if name == memberName then
+                                incrementActivityCount chatid chatName 0 model
+                            else
+                                incrementActivityCount chatid chatName 1 model
+
+                        _ ->
+                            if chatid /= model.currentChat then
+                                incrementActivityCount chatid chatName 1 model
+                            else
+                                model
+
+        ReceiveRsp { chatid } ->
+            if chatid == model.currentChat then
+                model
+            else
+                case Dict.get chatid model.chats of
+                    Nothing ->
+                        model
+
+                    Just { chatName } ->
+                        incrementActivityCount chatid chatName 1 model
+
+        _ ->
+            model
+
+
+receive : Server -> Message -> Model -> ( Model, Cmd Msg )
+receive interface message model =
+    let
+        mdl =
+            (if isProxyServer interface then
+                { model | proxyServer = interface }
+             else
+                model
+            )
+                |> updateActivity message
+    in
+    case log "Receive" message of
+        ReceiveRsp { chatid, memberName, message } ->
+            receiveRsp chatid memberName message mdl
+
+        JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
+            joinChatRsp chatid memberid memberName otherMembers isPublic mdl
+
+        LeaveChatRsp { chatid, memberName } ->
+            leaveChatRsp chatid memberName mdl
+
+        GetPublicChatsRsp { chats } ->
+            { mdl | publicChats = chats }
+                ! []
+
+        ErrorRsp { message } ->
+            { mdl
+                | error = Just message
+                , pendingChat = NoPendingChat
+            }
+                ! []
+
+        _ ->
+            { mdl
+                | error = Just <| toString message
+                , pendingChat = NoPendingChat
+            }
+                ! []
 
 
 receiveRsp : GameId -> MemberName -> String -> Model -> ( Model, Cmd Msg )
@@ -673,10 +783,9 @@ leaveChatRsp chatid memberName model =
                 { model
                     | chats =
                         Dict.insert chatid info2 model.chats
-                    , currentChat = chatid
                     , error = Nothing
                 }
-                    ! [ if chatid == model.chatid then
+                    ! [ if chatid == model.currentChat then
                             cmd
                         else
                             Cmd.none
@@ -739,44 +848,6 @@ leaveChatRsp chatid memberName model =
                             current
                 }
                     ! []
-
-
-receive : Server -> Message -> Model -> ( Model, Cmd Msg )
-receive interface message model =
-    let
-        mdl =
-            if isProxyServer interface then
-                { model | proxyServer = interface }
-            else
-                model
-    in
-    case log "Receive" message of
-        ReceiveRsp { chatid, memberName, message } ->
-            receiveRsp chatid memberName message model
-
-        JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
-            joinChatRsp chatid memberid memberName otherMembers isPublic model
-
-        LeaveChatRsp { chatid, memberName } ->
-            leaveChatRsp chatid memberName model
-
-        GetPublicChatsRsp { chats } ->
-            { mdl | publicChats = chats }
-                ! []
-
-        ErrorRsp { message } ->
-            { mdl
-                | error = Just message
-                , pendingChat = NoPendingChat
-            }
-                ! []
-
-        _ ->
-            { mdl
-                | error = Just <| toString message
-                , pendingChat = NoPendingChat
-            }
-                ! []
 
 
 switchPageCmd : WhichPage -> Cmd Msg
@@ -1113,9 +1184,40 @@ currentChatRows model =
                                 [ th "Members:"
                                 , td [ text <| String.join ", " members ]
                                 ]
+                  , if 2 > Dict.size model.chats then
+                        text ""
+                    else
+                        tr
+                            [ th "Unseen Activity:"
+                            , Html.td [ colspan 2 ]
+                                [ text <| activityString model ]
+                            ]
                   , tr [ td [ br ] ]
                   ]
                 ]
+
+
+activityString : Model -> String
+activityString model =
+    case Dict.values model.activityDict of
+        [] ->
+            "none"
+
+        values ->
+            values
+                |> List.sortBy (Tuple.first >> String.toLower)
+                |> List.foldl
+                    (\( name, count ) res ->
+                        let
+                            res2 =
+                                if res == "" then
+                                    res
+                                else
+                                    res ++ ", "
+                        in
+                        res2 ++ name ++ " (" ++ toString count ++ ")"
+                    )
+                    ""
 
 
 inputRows : Model -> ChatInfo -> List (Html Msg)
@@ -1168,13 +1270,26 @@ chatSelector model info =
     <|
         List.map
             (\chat ->
+                let
+                    body =
+                        case Dict.get chat.chatid model.activityDict of
+                            Nothing ->
+                                text chat.chatName
+
+                            Just ( _, count ) ->
+                                b <|
+                                    chat.chatName
+                                        ++ " ("
+                                        ++ toString count
+                                        ++ ")"
+                in
                 option
                     [ selected <| chatid == chat.chatid
                     , value chat.chatid
                     ]
-                    [ text chat.chatName ]
+                    [ body ]
             )
-            chats
+            (List.sortBy (.chatName >> String.toLower) chats)
 
 
 nameRow : Model -> Html Msg
@@ -1302,21 +1417,25 @@ viewPublicChatsPage model =
                     publicChatsTable model chats
             ]
         , errorLine model
-        , div [ style [ ( "width", "40em" ) ] ]
-            [ if model.publicChats == [] then
-                text ""
-              else
-                p []
-                    [ text "To join a public chat, fill in your 'Name', then either fill in the 'Chat Name' and click 'Join' or click on one of the underlined names in the 'Chat Name' column of the table."
+        , showHideHelpButton model
+        , if model.hideHelp then
+            text ""
+          else
+            div [ style [ ( "width", "40em" ) ] ]
+                [ if model.publicChats == [] then
+                    text ""
+                  else
+                    p []
+                        [ text "To join a public chat, fill in your 'Name', then either fill in the 'Chat Name' and click 'Join' or click on one of the underlined names in the 'Chat Name' column of the table."
+                        ]
+                , p []
+                    [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
+                , p []
+                    [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
+                , p []
+                    [ text "Click the 'Chat' link at the top of the page to go to the chat page. Click 'Public' from there to come back here."
                     ]
-            , p []
-                [ text "To create and join a new chat, fill in your 'Name' and the 'Chat Name' and click 'New'." ]
-            , p []
-                [ text "The 'Server' and its check mark are as on the 'Chat' page." ]
-            , p []
-                [ text "Click the 'Chat' link at the top of the page to go to the chat page. Click 'Public' from there to come back here."
                 ]
-            ]
         ]
 
 
@@ -1330,21 +1449,21 @@ publicChatsTable model chats =
                     , th "Members"
                     ]
               ]
-            , List.map
-                (\chat ->
-                    tr
-                        [ td
-                            [ a
-                                [ href "#"
-                                , onClick <| JoinPublicChat (Just chat.chatName)
+            , List.sortBy (.chatName >> String.toLower) chats
+                |> List.map
+                    (\chat ->
+                        tr
+                            [ td
+                                [ a
+                                    [ href "#"
+                                    , onClick <| JoinPublicChat (Just chat.chatName)
+                                    ]
+                                    [ text chat.chatName ]
                                 ]
-                                [ text chat.chatName ]
+                            , td [ text chat.memberName ]
+                            , td [ text <| toString chat.memberCount ]
                             ]
-                        , td [ text chat.memberName ]
-                        , td [ text <| toString chat.memberCount ]
-                        ]
-                )
-                chats
+                    )
             ]
 
 
