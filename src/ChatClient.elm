@@ -834,7 +834,7 @@ leaveChatRsp chatid memberName model =
                             )
                             info.members
 
-                    ( chats, current, servers ) =
+                    ( chats, current, servers, cmd ) =
                         if members == [] then
                             let
                                 chats =
@@ -845,6 +845,16 @@ leaveChatRsp chatid memberName model =
 
                                 servers =
                                     computeConnectedServers chats
+
+                                ( current, cmd ) =
+                                    case newChat of
+                                        Nothing ->
+                                            ( "", Cmd.none )
+
+                                        Just chat ->
+                                            ( chat.chatid
+                                            , ElmChat.restoreScroll chat.settings
+                                            )
                             in
                             ( chats
                             , case newChat of
@@ -854,6 +864,7 @@ leaveChatRsp chatid memberName model =
                                 Just chat ->
                                     chat.chatid
                             , servers
+                            , cmd
                             )
                         else
                             let
@@ -868,6 +879,7 @@ leaveChatRsp chatid memberName model =
                                 model.chats
                             , chatid
                             , model.connectedServers
+                            , Cmd.none
                             )
                 in
                 { model
@@ -881,7 +893,7 @@ leaveChatRsp chatid memberName model =
                         else
                             current
                 }
-                    ! []
+                    ! [ cmd ]
 
 
 switchPageCmd : WhichPage -> Cmd Msg
