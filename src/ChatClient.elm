@@ -14,7 +14,19 @@ module ChatClient exposing (..)
 
 {-| TODO
 
+Timestamps on posts. Need either a timezone port or preference.
+
+... 13:10 billstclair: Hi there.
+
+Scrolling broken. Missing Cmd somewhere. Or maybe has something to do with resizing the output area. Need to scroll to bottom when user returns to main page from public chats page.
+
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
+
+Tables really need to be keyed on (serverUrl, chatid), not just chatid.
+
+Encrypted chats.
+
+Lock private chats so nobody else can join. Should look like the chat doesn't exist to anybody who tries to join. Specify valid usernames, and auto-lock when all have joined.
 
 Move gamePlayersDict maintenance from Server Model to ServerInterface.ServerState.
 
@@ -33,6 +45,8 @@ Don't delete public chats until necessary to satisfy limit. Admin mode to enable
 Delete an idle private chat with only one member after a long timeout, e.g. an hour.
 Or maybe delete it only if somebody tries to make a new one, and we've already reached the max.
 
+Find or build a better styled text area for billstclair/elm-chat. Need at least bold/italics, and links. Should also have a seen line when you switch back into a chat, or back into the browser window. With scrolling doing the right thing to keep the seen line in view.
+
 Write code notes in src/README.md
 
 -}
@@ -49,9 +63,11 @@ import ChatClient.Types
         , Player
         , PublicChat
         )
+import Date exposing (Date)
 import Debug exposing (log)
 import Dict exposing (Dict)
 import ElmChat
+import Formatting as F exposing ((<>), Format)
 import Html
     exposing
         ( Attribute
@@ -85,6 +101,7 @@ import Http
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
 import Task
+import Time exposing (Time)
 import WebSocket
 import WebSocketFramework exposing (makeProxyServer, makeServer)
 import WebSocketFramework.EncodeDecode exposing (decodeMessage)
@@ -106,14 +123,16 @@ main =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch <|
-        List.map
-            (\( server, interface ) ->
-                WebSocket.listen server <| WebSocketMessage interface
-            )
-        <|
-            Dict.toList <|
-                model.connectedServers
+    Sub.batch
+        (List.concat
+            [ [ Time.every (0.25 * Time.second) SetTime ]
+            , Dict.toList model.connectedServers
+                |> List.map
+                    (\( server, interface ) ->
+                        WebSocket.listen server <| WebSocketMessage interface
+                    )
+            ]
+        )
 
 
 type WhichPage
@@ -154,12 +173,15 @@ type alias Model =
     , publicChatName : String
     , hideHelp : Bool
     , activityDict : Dict String ( String, Int )
+    , time : Time
+    , timeZoneOffset : Int
     , error : Maybe String
     }
 
 
 type Msg
     = Noop
+    | SetTime Time
     | SwitchPage WhichPage
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
@@ -210,25 +232,28 @@ serverLoadFile =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { whichPage = MainPage
-      , proxyServer = makeProxyServer messageProcessor Receive
-      , chats = Dict.empty
-      , publicChats = []
-      , currentChat = ""
-      , pendingChat = NoPendingChat
-      , memberName = "Nobody"
-      , serverUrl = "ws://localhost:8081"
-      , connectedServers = Dict.empty
-      , isRemote = True
-      , chatName = "chat"
-      , chatid = ""
-      , publicChatName = ""
-      , hideHelp = False
-      , activityDict = Dict.empty
-      , error = Nothing
-      }
-    , Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
-    )
+    { whichPage = MainPage
+    , proxyServer = makeProxyServer messageProcessor Receive
+    , chats = Dict.empty
+    , publicChats = []
+    , currentChat = ""
+    , pendingChat = NoPendingChat
+    , memberName = "Nobody"
+    , serverUrl = "ws://localhost:8081"
+    , connectedServers = Dict.empty
+    , isRemote = True
+    , chatName = "chat"
+    , chatid = ""
+    , publicChatName = ""
+    , hideHelp = False
+    , activityDict = Dict.empty
+    , time = 0
+    , timeZoneOffset = 240 --default to New York DST
+    , error = Nothing
+    }
+        ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
+          , Task.perform SetTime Time.now
+          ]
 
 
 updateChats : ElmChat.Settings Msg -> ChatInfo -> Model -> Model
@@ -309,6 +334,9 @@ update msg model =
     case msg of
         Noop ->
             model ! []
+
+        SetTime time ->
+            { model | time = time } ! []
 
         SetMemberName name ->
             { model | memberName = name } ! []
@@ -626,8 +654,12 @@ receiveRsp chatid memberName message model =
         Just chat ->
             let
                 ( settings1, cmd ) =
-                    ElmChat.addChat chat.settings
-                        (memberName ++ ": " ++ message)
+                    ElmChat.addChat chat.settings <|
+                        timestamp model
+                            ++ " "
+                            ++ memberName
+                            ++ ": "
+                            ++ message
             in
             ( { model
                 | chats =
@@ -666,8 +698,11 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                             }
 
                         ( settings, cmd ) =
-                            ElmChat.addChat info2.settings
-                                (memberName ++ " joined the chat.")
+                            ElmChat.addChat info2.settings <|
+                                timestamp model
+                                    ++ " "
+                                    ++ memberName
+                                    ++ " joined the chat."
 
                         info3 =
                             { info2 | settings = settings }
@@ -772,8 +807,11 @@ leaveChatRsp chatid memberName model =
                 -- Another member left
                 let
                     ( settings, cmd ) =
-                        ElmChat.addChat info.settings
-                            (memberName ++ " left the chat.")
+                        ElmChat.addChat info.settings <|
+                            timestamp model
+                                ++ " "
+                                ++ memberName
+                                ++ " left the chat."
 
                     info2 =
                         { info
@@ -1005,6 +1043,55 @@ table.prettytable caption {
 """
 
 
+hourFormat : Format Date String
+hourFormat =
+    F.padLeft 2 '0' (Date.hour >> F.int)
+
+
+minuteFormat : Format Date String
+minuteFormat =
+    F.padLeft 2 '0' (Date.minute >> F.int)
+
+
+secondFormat : Format Date String
+secondFormat =
+    F.padLeft 2 '0' (Date.second >> F.int)
+
+
+timeStampFormat : Format Date String
+timeStampFormat =
+    hourFormat <> F.s ":" <> minuteFormat <> F.s ":" <> secondFormat
+
+
+timeFormat : Format Date String
+timeFormat =
+    hourFormat <> F.s ":" <> minuteFormat
+
+
+timestamp : Model -> String
+timestamp model =
+    let
+        time =
+            model.time - toFloat model.timeZoneOffset
+
+        date =
+            Date.fromTime time
+    in
+    F.print timeStampFormat date
+
+
+time : Model -> String
+time model =
+    let
+        time =
+            model.time - toFloat model.timeZoneOffset
+
+        date =
+            Date.fromTime time
+    in
+    F.print timeFormat date
+
+
 view : Model -> Html Msg
 view model =
     div
@@ -1060,6 +1147,8 @@ pageSelector model =
     in
     div []
         [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage
+        , text " "
+        , text <| time model
         , text " "
         , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage
         ]

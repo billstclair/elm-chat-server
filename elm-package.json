@@ -8,6 +8,7 @@
     ],
     "exposed-modules": [],
     "dependencies": {
+        "amitu/elm-formatting": "1.0.0 <= v < 2.0.0",
         "billstclair/elm-chat": "1.2.0 <= v < 2.0.0",
         "billstclair/elm-websocket-framework": "8.2.0 <= v < 9.0.0",
         "elm-community/list-extra": "6.1.0 <= v < 7.0.0",
