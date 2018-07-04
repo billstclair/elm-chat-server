@@ -12,7 +12,7 @@
 
 module ChatClient.EncodeDecode exposing (..)
 
-import ChatClient.Types exposing (ErrorKind(..), Message(..), PublicChat)
+import ChatClient.Types exposing (ChatKey, ErrorKind(..), Message(..), PublicChat)
 import Dict
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
@@ -437,3 +437,37 @@ errorKindStringDecoder kind =
 
         _ ->
             JD.fail <| "Unknown error kind: " ++ kind
+
+
+{-| ChatKey needs to be turned into a string so it can be a value
+
+for an HTML.select Html.option.
+
+-}
+encodeChatKey : ChatKey -> String
+encodeChatKey chatkey =
+    let
+        ( url, id ) =
+            chatkey
+    in
+    JE.list [ JE.string url, JE.string id ]
+        |> JE.encode 0
+
+
+decodeChatKey : String -> Result String ChatKey
+decodeChatKey json =
+    JD.decodeString chatKeyDecoder json
+
+
+chatKeyDecoder : Decoder ChatKey
+chatKeyDecoder =
+    JD.list JD.string
+        |> JD.andThen
+            (\pair ->
+                case pair of
+                    [ url, id ] ->
+                        JD.succeed ( url, id )
+
+                    _ ->
+                        JD.fail "Malformed ChatKey"
+            )

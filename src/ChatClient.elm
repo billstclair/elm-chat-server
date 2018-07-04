@@ -46,11 +46,18 @@ Write code notes in src/README.md
 -}
 
 import Char
-import ChatClient.EncodeDecode exposing (messageDecoder, messageEncoder)
+import ChatClient.EncodeDecode
+    exposing
+        ( decodeChatKey
+        , encodeChatKey
+        , messageDecoder
+        , messageEncoder
+        )
 import ChatClient.Interface exposing (messageProcessor, messageToGameid)
 import ChatClient.Types
     exposing
-        ( GameState
+        ( ChatKey
+        , GameState
         , MemberName
         , MemberNames
         , Message(..)
@@ -99,7 +106,13 @@ import Time exposing (Time)
 import WebSocket
 import WebSocketFramework exposing (makeProxyServer, makeServer)
 import WebSocketFramework.EncodeDecode exposing (decodeMessage)
-import WebSocketFramework.Types exposing (GameId, PlayerId, ServerInterface(..))
+import WebSocketFramework.Types
+    exposing
+        ( GameId
+        , PlayerId
+        , ServerInterface(..)
+        , ServerUrl
+        )
 
 
 type alias Server =
@@ -145,18 +158,45 @@ type alias ChatInfo =
     }
 
 
+emptyChatKey : ChatKey
+emptyChatKey =
+    ( "", "" )
+
+
+chatKeyUrl : ChatKey -> ServerUrl
+chatKeyUrl =
+    Tuple.first
+
+
+chatKeyId : ChatKey -> GameId
+chatKeyId =
+    Tuple.second
+
+
+chatKey : ChatInfo -> ChatKey
+chatKey chat =
+    ( case chat.server of
+        Nothing ->
+            ""
+
+        Just server ->
+            serverUrl server
+    , chat.chatid
+    )
+
+
 type PendingChat
     = NoPendingChat
-    | ExistingPendingChat GameId
+    | ExistingPendingChat ChatKey
     | NewPendingChat ChatInfo
 
 
 type alias Model =
     { whichPage : WhichPage
     , proxyServer : Server
-    , chats : Dict GameId ChatInfo
+    , chats : Dict ( ServerUrl, GameId ) ChatInfo
     , publicChats : List PublicChat
-    , currentChat : String
+    , currentChat : ChatKey
     , pendingChat : PendingChat
     , memberName : String
     , serverUrl : String
@@ -166,7 +206,7 @@ type alias Model =
     , chatid : String
     , publicChatName : String
     , hideHelp : Bool
-    , activityDict : Dict String ( String, Int )
+    , activityDict : Dict ChatKey ( String, Int )
     , time : Time
     , timeZoneOffset : Int
     , error : Maybe String
@@ -230,7 +270,7 @@ init =
     , proxyServer = makeProxyServer messageProcessor Receive
     , chats = Dict.empty
     , publicChats = []
-    , currentChat = ""
+    , currentChat = emptyChatKey
     , pendingChat = NoPendingChat
     , memberName = "Nobody"
     , serverUrl = "ws://localhost:8081"
@@ -254,8 +294,7 @@ updateChats : ElmChat.Settings Msg -> ChatInfo -> Model -> Model
 updateChats settings chat model =
     { model
         | chats =
-            Dict.insert
-                chat.chatid
+            Dict.insert (chatKey chat)
                 { chat
                     | settings =
                         settings
@@ -374,23 +413,37 @@ update msg model =
             else
                 switchPage whichPage model
 
-        ChangeChat chatid ->
-            case Dict.get chatid model.chats of
-                Nothing ->
+        ChangeChat json ->
+            case decodeChatKey json of
+                Err msg ->
                     { model
-                        | error = Just <| "Unknown chat: ChangeChat " ++ chatid
+                        | error =
+                            Just <|
+                                "Can't change to chat "
+                                    ++ toString json
                     }
                         ! []
 
-                Just { chatName, settings } ->
-                    ({ model
-                        | currentChat = chatid
-                        , chatid = chatid
-                        , error = Nothing
-                     }
-                        |> incrementActivityCount chatid "" 0
-                    )
-                        ! [ ElmChat.restoreScroll settings ]
+                Ok chatkey ->
+                    case Dict.get chatkey model.chats of
+                        Nothing ->
+                            { model
+                                | error =
+                                    Just <|
+                                        "Unknown chat: ChangeChat "
+                                            ++ toString chatkey
+                            }
+                                ! []
+
+                        Just { chatName, settings } ->
+                            ({ model
+                                | currentChat = chatkey
+                                , chatid = chatKeyId chatkey
+                                , error = Nothing
+                             }
+                                |> incrementActivityCount chatkey "" 0
+                            )
+                                ! [ ElmChat.restoreScroll settings ]
 
         NewChat ->
             let
@@ -528,16 +581,16 @@ update msg model =
             receive interface message model
 
 
-incrementActivityCount : GameId -> String -> Int -> Model -> Model
-incrementActivityCount chatid chatName amount model =
+incrementActivityCount : ChatKey -> String -> Int -> Model -> Model
+incrementActivityCount chatkey chatName amount model =
     if amount == 0 then
         { model
-            | activityDict = Dict.remove chatid model.activityDict
+            | activityDict = Dict.remove chatkey model.activityDict
         }
     else
         let
             tuple =
-                case Dict.get chatid model.activityDict of
+                case Dict.get chatkey model.activityDict of
                     Nothing ->
                         ( chatName, amount )
 
@@ -545,26 +598,34 @@ incrementActivityCount chatid chatName amount model =
                         ( n, a + amount )
         in
         { model
-            | activityDict = Dict.insert chatid tuple model.activityDict
+            | activityDict = Dict.insert chatkey tuple model.activityDict
         }
 
 
-updateActivity : Message -> Model -> Model
-updateActivity message model =
+updateActivity : Message -> Server -> Model -> Model
+updateActivity message server model =
     case message of
         JoinChatRsp { chatid } ->
-            if chatid == model.currentChat then
+            let
+                chatkey =
+                    serverChatKey chatid server
+            in
+            if chatkey == model.currentChat then
                 model
             else
-                case Dict.get chatid model.chats of
+                case Dict.get chatkey model.chats of
                     Nothing ->
                         model
 
                     Just { chatName } ->
-                        incrementActivityCount chatid chatName 1 model
+                        incrementActivityCount chatkey chatName 1 model
 
         LeaveChatRsp { chatid, memberName } ->
-            case Dict.get chatid model.chats of
+            let
+                chatkey =
+                    serverChatKey chatid server
+            in
+            case Dict.get chatkey model.chats of
                 Nothing ->
                     model
 
@@ -572,28 +633,32 @@ updateActivity message model =
                     case members of
                         [ ( _, name ) ] ->
                             if name == memberName then
-                                incrementActivityCount chatid chatName 0 model
-                            else if chatid /= model.currentChat then
-                                incrementActivityCount chatid chatName 1 model
+                                incrementActivityCount chatkey chatName 0 model
+                            else if chatkey /= model.currentChat then
+                                incrementActivityCount chatkey chatName 1 model
                             else
                                 model
 
                         _ ->
-                            if chatid /= model.currentChat then
-                                incrementActivityCount chatid chatName 1 model
+                            if chatkey /= model.currentChat then
+                                incrementActivityCount chatkey chatName 1 model
                             else
                                 model
 
         ReceiveRsp { chatid } ->
-            if chatid == model.currentChat then
+            let
+                chatkey =
+                    serverChatKey chatid server
+            in
+            if chatkey == model.currentChat then
                 model
             else
-                case Dict.get chatid model.chats of
+                case Dict.get chatkey model.chats of
                     Nothing ->
                         model
 
                     Just { chatName } ->
-                        incrementActivityCount chatid chatName 1 model
+                        incrementActivityCount chatkey chatName 1 model
 
         _ ->
             model
@@ -608,17 +673,17 @@ receive interface message model =
              else
                 model
             )
-                |> updateActivity message
+                |> updateActivity message interface
     in
     case log "Receive" message of
         ReceiveRsp { chatid, memberName, message } ->
-            receiveRsp chatid memberName message mdl
+            receiveRsp chatid memberName message interface mdl
 
         JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
-            joinChatRsp chatid memberid memberName otherMembers isPublic mdl
+            joinChatRsp chatid memberid memberName otherMembers isPublic interface mdl
 
         LeaveChatRsp { chatid, memberName } ->
-            leaveChatRsp chatid memberName mdl
+            leaveChatRsp chatid memberName interface mdl
 
         GetPublicChatsRsp { chats } ->
             { mdl | publicChats = chats }
@@ -639,9 +704,13 @@ receive interface message model =
                 ! []
 
 
-receiveRsp : GameId -> MemberName -> String -> Model -> ( Model, Cmd Msg )
-receiveRsp chatid memberName message model =
-    case Dict.get chatid model.chats of
+receiveRsp : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
+receiveRsp chatid memberName message server model =
+    let
+        chatkey =
+            serverChatKey chatid server
+    in
+    case Dict.get chatkey model.chats of
         Nothing ->
             model ! []
 
@@ -658,24 +727,28 @@ receiveRsp chatid memberName message model =
             ( { model
                 | chats =
                     Dict.insert
-                        chatid
+                        chatkey
                         { chat | settings = settings1 }
                         model.chats
                 , error = Nothing
               }
-            , if chatid == model.currentChat then
+            , if chatkey == model.currentChat then
                 cmd
               else
                 Cmd.none
             )
 
 
-joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Model -> ( Model, Cmd Msg )
-joinChatRsp chatid memberid memberName otherMembers isPublic model =
+joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
+joinChatRsp chatid memberid memberName otherMembers isPublic server model =
+    let
+        chatkey =
+            serverChatKey chatid server
+    in
     case memberid of
         Nothing ->
             -- Remote member just joined. Ignore model.pendingChat
-            case Dict.get chatid model.chats of
+            case Dict.get chatkey model.chats of
                 Nothing ->
                     { model
                         | error =
@@ -703,11 +776,11 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                     in
                     { model
                         | chats =
-                            Dict.insert chatid info3 model.chats
+                            Dict.insert chatkey info3 model.chats
                         , error = Nothing
                     }
                         ! [ switchPageCmd MainPage
-                          , if chatid == model.currentChat then
+                          , if chatkey == model.currentChat then
                                 cmd
                             else
                                 Cmd.none
@@ -726,26 +799,26 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                     }
                         ! []
 
-                ExistingPendingChat chtid ->
-                    if chtid /= chatid then
+                ExistingPendingChat key ->
+                    if key /= chatkey then
                         { mdl
                             | error =
                                 Just <|
-                                    "Requested join of chatid: "
-                                        ++ chtid
+                                    "Requested join of chat: "
+                                        ++ toString key
                                         ++ ", got: "
-                                        ++ chatid
+                                        ++ toString chatkey
                         }
                             ! []
                     else
                         -- New local member for existing chat
-                        case Dict.get chatid mdl.chats of
+                        case Dict.get chatkey mdl.chats of
                             Nothing ->
                                 { mdl
                                     | error =
                                         Just <|
-                                            "Can't find pending chat for id: "
-                                                ++ chatid
+                                            "Can't find pending chat for (url, id): "
+                                                ++ toString chatkey
                                 }
                                     ! []
 
@@ -759,7 +832,7 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                                 in
                                 { mdl
                                     | chats =
-                                        Dict.insert chatid info2 mdl.chats
+                                        Dict.insert chatkey info2 mdl.chats
                                 }
                                     ! []
 
@@ -775,16 +848,20 @@ joinChatRsp chatid memberid memberName otherMembers isPublic model =
                     in
                     { mdl
                         | chats =
-                            Dict.insert chatid info2 mdl.chats
-                        , currentChat = chatid
+                            Dict.insert chatkey info2 mdl.chats
+                        , currentChat = chatkey
                         , chatid = chatid
                     }
                         ! [ switchPageCmd MainPage ]
 
 
-leaveChatRsp : GameId -> MemberName -> Model -> ( Model, Cmd Msg )
-leaveChatRsp chatid memberName model =
-    case Dict.get chatid model.chats of
+leaveChatRsp : GameId -> MemberName -> Server -> Model -> ( Model, Cmd Msg )
+leaveChatRsp chatid memberName server model =
+    let
+        chatkey =
+            serverChatKey chatid server
+    in
+    case Dict.get chatkey model.chats of
         Nothing ->
             { model
                 | error =
@@ -816,10 +893,10 @@ leaveChatRsp chatid memberName model =
                 in
                 { model
                     | chats =
-                        Dict.insert chatid info2 model.chats
+                        Dict.insert chatkey info2 model.chats
                     , error = Nothing
                 }
-                    ! [ if chatid == model.currentChat then
+                    ! [ if chatkey == model.currentChat then
                             cmd
                         else
                             Cmd.none
@@ -838,7 +915,7 @@ leaveChatRsp chatid memberName model =
                         if members == [] then
                             let
                                 chats =
-                                    Dict.remove chatid model.chats
+                                    Dict.remove chatkey model.chats
 
                                 newChat =
                                     List.head <| Dict.values chats
@@ -849,20 +926,20 @@ leaveChatRsp chatid memberName model =
                                 ( current, cmd ) =
                                     case newChat of
                                         Nothing ->
-                                            ( "", Cmd.none )
+                                            ( emptyChatKey, Cmd.none )
 
                                         Just chat ->
-                                            ( chat.chatid
+                                            ( chatKey chat
                                             , ElmChat.restoreScroll chat.settings
                                             )
                             in
                             ( chats
                             , case newChat of
                                 Nothing ->
-                                    ""
+                                    emptyChatKey
 
                                 Just chat ->
-                                    chat.chatid
+                                    chatKey chat
                             , servers
                             , cmd
                             )
@@ -874,10 +951,10 @@ leaveChatRsp chatid memberName model =
                                     }
                             in
                             ( Dict.insert
-                                chatid
+                                chatkey
                                 chat
                                 model.chats
-                            , chatid
+                            , chatkey
                             , model.connectedServers
                             , Cmd.none
                             )
@@ -888,10 +965,10 @@ leaveChatRsp chatid memberName model =
                     , connectedServers = servers
                     , error = Nothing
                     , chatid =
-                        if current == "" then
+                        if current == emptyChatKey then
                             model.chatid
                         else
-                            current
+                            chatKeyId current
                 }
                     ! [ cmd ]
 
@@ -946,11 +1023,34 @@ switchPage whichPage model =
           ]
 
 
+serverChatKey : GameId -> Server -> ChatKey
+serverChatKey chatid server =
+    ( if isProxyServer server then
+        ""
+      else
+        serverUrl server
+    , chatid
+    )
+
+
+currentServerChatKey : GameId -> Model -> ChatKey
+currentServerChatKey chatid model =
+    ( if model.isRemote then
+        model.serverUrl
+      else
+        ""
+    , chatid
+    )
+
+
 joinChat : GameId -> Model -> ( Model, Cmd Msg )
 joinChat chatid model =
     let
+        chatkey =
+            currentServerChatKey chatid model
+
         ( ( mdl, info ), existing ) =
-            case Dict.get chatid model.chats of
+            case Dict.get chatkey model.chats of
                 Just chat ->
                     ( ( model, chat ), True )
 
@@ -963,7 +1063,7 @@ joinChat chatid model =
     { mdl
         | pendingChat =
             if existing then
-                ExistingPendingChat chatid
+                ExistingPendingChat chatkey
             else
                 NewPendingChat info
         , error = Nothing
@@ -976,14 +1076,17 @@ joinChat chatid model =
           ]
 
 
+serverUrl : Server -> String
+serverUrl (ServerInterface server) =
+    server.server
+
+
 isProxyServer : Server -> Bool
 isProxyServer server =
-    case server of
-        ServerInterface si ->
-            si.server == ""
+    "" == serverUrl server
 
 
-computeConnectedServers : Dict GameId ChatInfo -> Dict String Server
+computeConnectedServers : Dict ChatKey ChatInfo -> Dict String Server
 computeConnectedServers chats =
     let
         serverInfo : ChatInfo -> Maybe ( String, Server )
@@ -1362,8 +1465,8 @@ chatSelector model info =
         chats =
             Dict.values model.chats
 
-        chatid =
-            info.chatid
+        chatkey =
+            chatKey info
     in
     select
         [ style [ ( "width", "100%" ) ]
@@ -1374,7 +1477,7 @@ chatSelector model info =
             (\chat ->
                 let
                     body =
-                        case Dict.get chat.chatid model.activityDict of
+                        case Dict.get (chatKey chat) model.activityDict of
                             Nothing ->
                                 text chat.chatName
 
@@ -1384,10 +1487,13 @@ chatSelector model info =
                                         ++ " ("
                                         ++ toString count
                                         ++ ")"
+
+                    key =
+                        chatKey chat
                 in
                 option
-                    [ selected <| chatid == chat.chatid
-                    , value chat.chatid
+                    [ selected <| chatkey == key
+                    , value <| encodeChatKey key
                     ]
                     [ body ]
             )

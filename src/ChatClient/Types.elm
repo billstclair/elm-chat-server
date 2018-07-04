@@ -12,7 +12,8 @@
 
 module ChatClient.Types
     exposing
-        ( ErrorKind(..)
+        ( ChatKey
+        , ErrorKind(..)
         , GameState
         , MemberName
         , MemberNames
@@ -25,7 +26,7 @@ module ChatClient.Types
 import Debug exposing (log)
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
-import WebSocketFramework.Types exposing (GameId, PlayerId)
+import WebSocketFramework.Types exposing (GameId, PlayerId, ServerUrl)
 
 
 type alias GameState =
@@ -54,6 +55,10 @@ type alias PublicChat =
     , chatName : PublicChatName
     , memberCount : Int
     }
+
+
+type alias ChatKey =
+    ( ServerUrl, GameId )
 
 
 type ErrorKind
