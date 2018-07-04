@@ -14,12 +14,6 @@ module ChatClient exposing (..)
 
 {-| TODO
 
-Timestamps on posts. Need either a timezone port or preference.
-
-... 13:10 billstclair: Hi there.
-
-Scrolling broken. Missing Cmd somewhere. Or maybe has something to do with resizing the output area. Need to scroll to bottom when user returns to main page from public chats page.
-
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
 
 Tables really need to be keyed on (serverUrl, chatid), not just chatid.
@@ -931,7 +925,12 @@ switchPage whichPage model =
         ! [ if isPublic then
                 send server mdl GetPublicChatsReq
             else
-                Cmd.none
+                case Dict.get model.currentChat model.chats of
+                    Nothing ->
+                        Cmd.none
+
+                    Just info ->
+                        ElmChat.restoreScroll info.settings
           ]
 
 
