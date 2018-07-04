@@ -2,7 +2,7 @@ This will eventually be my "slides" for the [[https://www.meetup.com/Elm-Eug/eve
 Server in Elm]] presentation to the Eugene, Oregon Elm Users Group on
 August 1, 2018.
 
-A couple of illustrations of how Elm's string typing makes massive
+A couple of illustrations of how Elm's strong typing makes massive
 code changes easy to get right: 
 
 1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm, eliminating duplicate records]]
