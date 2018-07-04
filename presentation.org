@@ -1,0 +1,9 @@
+This will eventually be my "slides" for the [[https://www.meetup.com/Elm-Eug/events/250177941/?gj=co2&rv=co2&_xtd=gatlbWFpbF9jbGlja9oAJDk5YjMzOGQ0LWUwMGUtNDNlNy05MTRlLThlOTJhMjUzMmQzMQ][WebSocket Client AND
+Server in Elm]] presentation to the Eugene, Oregon Elm Users Group on
+August 1, 2018.
+
+A couple of illustrations of how Elm's string typing makes massive
+code changes easy to get right: 
+
+1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm, eliminating duplicate records]]
+2. [[https://github.com/billstclair/elm-chat-server/commit/b87e443636941eeaa40b65813f5ce25dd2f0a609][Reorg keys from chatid to (serverUrl, chatid)]]
