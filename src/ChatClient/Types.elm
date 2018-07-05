@@ -85,9 +85,9 @@ type alias SavedChatInfo msg =
 
 {-| Subset of ChatClient.Model fields that need to be persistent
 -}
-type alias SavedModel msg =
+type alias SavedModel =
     { whichPage : WhichPage
-    , chats : Dict ChatKey (SavedChatInfo msg)
+    , chatKeys : List ChatKey --SavedChatInfo is saved separately
     , currentChat : ChatKey
     , memberName : String
     , serverUrl : String
