@@ -1349,6 +1349,7 @@ pageSelector model =
     in
     div []
         [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage
+        , text " "
         , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage
         ]
 
