@@ -19,17 +19,17 @@ import ChatClient.Types
         , MemberName
         , Message(..)
         , PublicChat
-        , SavedChatInfo
         , SavedModel
         , WhichPage(..)
         )
 import Dict exposing (Dict)
 import ElmChat
 import Json.Decode as JD exposing (Decoder)
-import Json.Decode.Pipeline as DP exposing (decode, required)
+import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
 import Json.Encode as JE exposing (Value)
 import WebSocketFramework exposing (decodePlist, unknownMessage)
 import WebSocketFramework.EncodeDecode exposing (genericMessageDecoder)
+import WebSocketFramework.ServerInterface as ServerInterface
 import WebSocketFramework.Types
     exposing
         ( DecoderPlist
@@ -39,6 +39,7 @@ import WebSocketFramework.Types
         , Plist
         , PublicGame
         , ReqRsp(..)
+        , ServerUrl
         )
 
 
@@ -503,7 +504,7 @@ savedModelEncoder : SavedModel -> Value
 savedModelEncoder model =
     JE.object
         [ ( "whichPage", whichPageEncoder model.whichPage )
-        , ( "chatKeys", savedChatKeysEncoder model.chatKeys )
+        , ( "chatKeys", chatKeysEncoder model.chatKeys )
         , ( "currentChat", chatKeyEncoder model.currentChat )
         , ( "memberName", JE.string model.memberName )
         , ( "serverUrl", JE.string model.serverUrl )
@@ -524,7 +525,7 @@ savedModelDecoder : Decoder SavedModel
 savedModelDecoder =
     decode SavedModel
         |> required "whichPage" whichPageDecoder
-        |> required "chatKeys" savedChatKeysDecoder
+        |> required "chatKeys" chatKeysDecoder
         |> required "currentChat" chatKeyDecoder
         |> required "memberName" JD.string
         |> required "serverUrl" JD.string
@@ -562,43 +563,12 @@ whichPageDecoder =
             )
 
 
-savedChatKeysEncoder : List ChatKey -> Value
-savedChatKeysEncoder keys =
+chatKeysEncoder : List ChatKey -> Value
+chatKeysEncoder keys =
     JE.list <|
         List.map chatKeyEncoder keys
 
 
-savedChatKeysDecoder : Decoder (List ChatKey)
-savedChatKeysDecoder =
+chatKeysDecoder : Decoder (List ChatKey)
+chatKeysDecoder =
     JD.list chatKeyDecoder
-
-
-savedChatEncoder : SavedChatInfo msg -> Value
-savedChatEncoder chat =
-    JE.object
-        [ ( "chatName", JE.string chat.chatName )
-        , ( "members"
-          , JE.list <|
-                List.map stringPairEncoder chat.members
-          )
-        , ( "serverUrl", JE.string chat.serverUrl )
-        , ( "chatid", JE.string chat.chatid )
-        , ( "isPublic", JE.bool chat.isPublic )
-        , ( "settings", ElmChat.settingsEncoder chat.settings )
-        ]
-
-
-memberDecoder : Decoder ( GameId, MemberName )
-memberDecoder =
-    stringPairDecoder "member (id, name)"
-
-
-savedChatDecoder : ElmChat.Updater msg -> Decoder (SavedChatInfo msg)
-savedChatDecoder updater =
-    decode SavedChatInfo
-        |> required "chatName" JD.string
-        |> required "members" (JD.list memberDecoder)
-        |> required "serverUrl" JD.string
-        |> required "chatid" JD.string
-        |> required "isPublic" JD.bool
-        |> required "settings" (ElmChat.settingsDecoder updater)

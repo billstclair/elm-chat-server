@@ -56,6 +56,8 @@ import ChatClient.EncodeDecode
         , encodeChatKey
         , messageDecoder
         , messageEncoder
+        , stringPairDecoder
+        , stringPairEncoder
         )
 import ChatClient.Interface exposing (messageProcessor, messageToGameid)
 import ChatClient.Types
@@ -67,6 +69,7 @@ import ChatClient.Types
         , Message(..)
         , Player
         , PublicChat
+        , SavedModel
         , WhichPage(..)
         )
 import Date exposing (Date)
@@ -105,14 +108,17 @@ import Html.Attributes
 import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
 import Http
 import Json.Decode as JD exposing (Decoder)
+import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
+import Json.Encode as JE exposing (Value)
 import List.Extra as LE
 import LocalStorage exposing (LocalStorage)
 import LocalStorage.SharedTypes as LS
 import Task
 import Time exposing (Time)
 import WebSocket
-import WebSocketFramework exposing (makeProxyServer, makeServer)
+import WebSocketFramework exposing (makeProxyServer)
 import WebSocketFramework.EncodeDecode exposing (decodeMessage)
+import WebSocketFramework.ServerInterface as ServerInterface
 import WebSocketFramework.Types
     exposing
         ( GameId
@@ -164,8 +170,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         (List.concat
-            [ [ Time.every (0.25 * Time.second) SetTime
-              , case model.receiveItemPort of
+            [ [ case model.receiveItemPort of
                     Nothing ->
                         Sub.none
 
@@ -253,6 +258,7 @@ type alias Model =
 type Msg
     = Noop
     | SetTime Time
+    | DelayedAction (Model -> ( Model, Cmd Msg )) Time
     | SwitchPage WhichPage
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
@@ -302,10 +308,15 @@ serverLoadFile =
     "server.txt"
 
 
+initialProxyServer : Server
+initialProxyServer =
+    makeProxyServer messageProcessor Receive
+
+
 init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> ( Model, Cmd Msg )
 init timeZoneOffset ports receiveItemPort =
     { whichPage = MainPage
-    , proxyServer = makeProxyServer messageProcessor Receive
+    , proxyServer = initialProxyServer
     , chats = Dict.empty
     , publicChats = []
     , currentChat = emptyChatKey
@@ -364,7 +375,7 @@ getServer model =
             Nothing ->
                 let
                     server =
-                        makeServer messageEncoder url Noop
+                        Maybe.withDefault initialProxyServer <| makeServer url
                 in
                 ( { model
                     | connectedServers =
@@ -372,6 +383,14 @@ getServer model =
                   }
                 , Just server
                 )
+
+
+makeServer : ServerUrl -> Maybe Server
+makeServer url =
+    if url == "" then
+        Nothing
+    else
+        Just <| WebSocketFramework.makeServer messageEncoder url Noop
 
 
 newChatInfo : Model -> ( Model, ChatInfo )
@@ -410,6 +429,9 @@ update msg model =
 
         SetTime time ->
             { model | time = time } ! []
+
+        DelayedAction updater time ->
+            updater { model | time = time }
 
         SetMemberName name ->
             { model | memberName = name } ! []
@@ -747,8 +769,19 @@ receive interface message model =
                 ! []
 
 
+delayedAction : (Model -> ( Model, Cmd Msg )) -> Cmd Msg
+delayedAction updater =
+    Task.perform (DelayedAction updater) Time.now
+
+
 receiveRsp : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
 receiveRsp chatid memberName message server model =
+    model
+        ! [ delayedAction <| receiveRspDelayed chatid memberName message server ]
+
+
+receiveRspDelayed : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
+receiveRspDelayed chatid memberName message server model =
     let
         chatkey =
             serverChatKey chatid server
@@ -784,6 +817,12 @@ receiveRsp chatid memberName message server model =
 
 joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
 joinChatRsp chatid memberid memberName otherMembers isPublic server model =
+    model
+        ! [ delayedAction <| joinChatRspDelayed chatid memberid memberName otherMembers isPublic server ]
+
+
+joinChatRspDelayed : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
+joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model =
     let
         chatkey =
             serverChatKey chatid server
@@ -900,6 +939,12 @@ joinChatRsp chatid memberid memberName otherMembers isPublic server model =
 
 leaveChatRsp : GameId -> MemberName -> Server -> Model -> ( Model, Cmd Msg )
 leaveChatRsp chatid memberName server model =
+    model
+        ! [ delayedAction <| leaveChatRspDelayed chatid memberName server ]
+
+
+leaveChatRspDelayed : GameId -> MemberName -> Server -> Model -> ( Model, Cmd Msg )
+leaveChatRspDelayed chatid memberName server model =
     let
         chatkey =
             serverChatKey chatid server
@@ -1120,8 +1165,8 @@ joinChat chatid model =
 
 
 serverUrl : Server -> String
-serverUrl (ServerInterface server) =
-    server.server
+serverUrl server =
+    ServerInterface.getServer server
 
 
 isProxyServer : Server -> Bool
@@ -1304,9 +1349,6 @@ pageSelector model =
     in
     div []
         [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage
-        , text " "
-        , text <| time model
-        , text " "
         , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage
         ]
 
@@ -1740,3 +1782,88 @@ nbsp =
 copyright : String
 copyright =
     stringFromCode 169
+
+
+
+{- Persistence -}
+
+
+modelToSaved : Model -> SavedModel
+modelToSaved model =
+    { whichPage = model.whichPage
+    , chatKeys = Dict.keys model.chats
+    , currentChat = model.currentChat
+    , memberName = model.memberName
+    , serverUrl = model.serverUrl
+    , isRemote = model.isRemote
+    , chatName = model.chatName
+    , chatid = model.chatid
+    , publicChatName = model.publicChatName
+    , hideHelp = model.hideHelp
+    }
+
+
+savedToModel : SavedModel -> Model -> Model
+savedToModel savedModel defaults =
+    { defaults
+        | whichPage = savedModel.whichPage
+        , chats = Dict.empty
+        , publicChats = []
+        , currentChat = savedModel.currentChat
+        , memberName = savedModel.memberName
+        , serverUrl = savedModel.serverUrl
+        , isRemote = savedModel.isRemote
+        , chatName = savedModel.chatName
+        , chatid = savedModel.chatid
+        , publicChatName = savedModel.publicChatName
+        , hideHelp = savedModel.hideHelp
+    }
+
+
+
+{- Encoder and decoder for ChatInfo.
+
+   These are here, instead of EncodeDecode.elm,
+   so that the server doesn't need ElmChat or Http.
+
+-}
+
+
+chatEncoder : ChatInfo -> Value
+chatEncoder chat =
+    JE.object
+        [ ( "chatName", JE.string chat.chatName )
+        , ( "members"
+          , JE.list <|
+                List.map stringPairEncoder chat.members
+          )
+        , ( "serverUrl"
+          , case chat.server of
+                Nothing ->
+                    JE.null
+
+                Just server ->
+                    JE.string <| ServerInterface.getServer server
+          )
+        , ( "chatid", JE.string chat.chatid )
+        , ( "isPublic", JE.bool chat.isPublic )
+        , ( "settings", ElmChat.settingsEncoder chat.settings )
+        ]
+
+
+memberDecoder : Decoder ( GameId, MemberName )
+memberDecoder =
+    stringPairDecoder "member (id, name)"
+
+
+chatDecoder : Decoder ChatInfo
+chatDecoder =
+    decode ChatInfo
+        |> required "chatName" JD.string
+        |> required "members" (JD.list memberDecoder)
+        |> optional "serverUrl" (JD.map makeServer JD.string) Nothing
+        |> required "chatid" JD.string
+        -- otherMembers
+        |> hardcoded []
+        |> required "isPublic" JD.bool
+        |> required "settings" (ElmChat.settingsDecoder ChatUpdate)
