@@ -1,6 +1,78 @@
-This will eventually be my "slides" for the [[https://www.meetup.com/Elm-Eug/events/250177941/?gj=co2&rv=co2&_xtd=gatlbWFpbF9jbGlja9oAJDk5YjMzOGQ0LWUwMGUtNDNlNy05MTRlLThlOTJhMjUzMmQzMQ][WebSocket Client AND
-Server in Elm]] presentation to the Eugene, Oregon Elm Users Group on
-August 1, 2018.
+WebSocket Client AND Server in Elm
+- Elm Eugene
+- Wednesday, August 1, 2018, 5:30pm PDT
+- Bill St. Clair <billstclair@gmail.com>
+
+Links:
+- [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
+- [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
+- [[https://github.com/billstclair/https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
+- [[https://xossbow.com/chat/][xossbow.com/chat]]
+   
+* Org mode
+
+This is an Emacs Org Mode file. Many features will be missing if you don't have Emacs.
+
+* Setup
+
+To be done before the presentation.
+
+- cd ~/elm-websocket-framework-server/example/server
+- npm run build:server
+- npm run start:server
+- cd ~/elm-websocket-framework/example
+- elm reactor
+
+Open a new window in Chrome. Hide the others.
+- Make Chrome the default browser.
+- Make the default font bigger.
+- chrome://settings/fonts
+
+Test http://localhost:8000
+
+Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on Slack then.
+
+- Share screen in Zoom.
+- Emacs first, Chrome for code, Desktop for demo
+- C-x n, C-x p
+
+* Intro
+
+As part of my Elm version of two board games that my son invented,
+[[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and
+[[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication
+mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to
+generalize and share my technology.
+
+Hence were born [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]] and
+[[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][billstclair/elm-websocket-framework-server]]. 
+
+I built a very simple example, included with those packages, and a
+near-real-world, multi-user, multi-session, chat example, at
+[[https://xossbow.com/chat][xossbow.com/chat]]. I'll show you the chat example now, just so you can
+see how it works. Somebody go to that link, and I'll guide you through
+connecting with me.
+
+The chat app uses [[https://github.com/billstclair/elm-localstorage][billstclair/elm-localstorage]] for its
+persistence. There's a presentation I wrote for that [[https://github.com/billstclair/elm-localstorage-presentation/blob/master/presentation.org][here]].
+
+* The wire protocol
+
+* The Message type
+
+* Encoders and decoders for Messages
+
+* The message processor
+
+* Development debugging with a simulated server
+
+* Setting up and using a real server
+
+* Games and players
+
+* Questions
+
+* Extras
 
 A couple of illustrations of how Elm's strong typing makes massive
 code changes easy to get right: 
