@@ -11,6 +11,7 @@
         "NoRedInk/elm-decode-pipeline": "3.0.0 <= v < 4.0.0",
         "amitu/elm-formatting": "1.0.0 <= v < 2.0.0",
         "billstclair/elm-chat": "1.2.0 <= v < 2.0.0",
+        "billstclair/elm-localstorage": "4.0.2 <= v < 5.0.0",
         "billstclair/elm-websocket-framework": "8.2.0 <= v < 9.0.0",
         "elm-community/list-extra": "6.1.0 <= v < 7.0.0",
         "elm-community/string-extra": "1.5.0 <= v < 2.0.0",

@@ -464,12 +464,13 @@ encodeChatKey chatkey =
 
 
 chatKeyEncoder : ChatKey -> Value
-chatKeyEncoder chatkey =
-    let
-        ( url, id ) =
-            chatkey
-    in
-    JE.list [ JE.string url, JE.string id ]
+chatKeyEncoder =
+    stringPairEncoder
+
+
+stringPairEncoder : ( String, String ) -> Value
+stringPairEncoder ( s1, s2 ) =
+    JE.list [ JE.string s1, JE.string s2 ]
 
 
 decodeChatKey : String -> Result String ChatKey
@@ -578,11 +579,7 @@ savedChatEncoder chat =
         [ ( "chatName", JE.string chat.chatName )
         , ( "members"
           , JE.list <|
-                List.map
-                    (\( id, name ) ->
-                        JE.list [ JE.string id, JE.string name ]
-                    )
-                    chat.members
+                List.map stringPairEncoder chat.members
           )
         , ( "serverUrl", JE.string chat.serverUrl )
         , ( "chatid", JE.string chat.chatid )

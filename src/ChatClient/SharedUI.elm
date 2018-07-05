@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------
 --
--- ChatClient.elm
+-- SharedUI.elm
 -- The client side of a chat client/server demo for billstclair/elm-websocket-framework
 -- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
 -- Some rights reserved.
@@ -10,7 +10,13 @@
 ----------------------------------------------------------------------
 
 
-module ChatClient exposing (..)
+module ChatClient.SharedUI
+    exposing
+        ( Msg(..)
+        , localStoragePrefix
+        , program
+        , programWithFlags
+        )
 
 {-| TODO
 
@@ -100,6 +106,8 @@ import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
 import Http
 import Json.Decode as JD exposing (Decoder)
 import List.Extra as LE
+import LocalStorage exposing (LocalStorage)
+import LocalStorage.SharedTypes as LS
 import Task
 import Time exposing (Time)
 import WebSocket
@@ -118,20 +126,53 @@ type alias Server =
     ServerInterface GameState Player Message Msg
 
 
-main =
+{-| New York during Daylight Saving Time
+-}
+defaultTimezoneOffset : Int
+defaultTimezoneOffset =
+    240
+
+
+program : LS.Ports Msg -> Platform.Program Never Model Msg
+program ports =
     Html.program
-        { init = init
+        { init = init defaultTimezoneOffset ports Nothing
         , view = view
         , update = update
         , subscriptions = subscriptions
         }
 
 
+programWithFlags : LS.Ports Msg -> LS.ReceiveItemPort Msg -> Platform.Program Int Model Msg
+programWithFlags ports receiveItemPort =
+    Html.programWithFlags
+        { init =
+            \timezoneOffset ->
+                init timezoneOffset ports (Just receiveItemPort)
+        , view = view
+        , update = update
+        , subscriptions = subscriptions
+        }
+
+
+localStoragePrefix : String
+localStoragePrefix =
+    "ChatClient"
+
+
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         (List.concat
-            [ [ Time.every (0.25 * Time.second) SetTime ]
+            [ [ Time.every (0.25 * Time.second) SetTime
+              , case model.receiveItemPort of
+                    Nothing ->
+                        Sub.none
+
+                    Just receivePort ->
+                        receivePort <|
+                            LS.receiveWrapper ReceiveLocalStorage localStoragePrefix
+              ]
             , Dict.toList model.connectedServers
                 |> List.map
                     (\( server, interface ) ->
@@ -203,6 +244,8 @@ type alias Model =
     , activityDict : Dict ChatKey ( String, Int )
     , time : Time
     , timeZoneOffset : Int
+    , storage : LocalStorage Msg
+    , receiveItemPort : Maybe (LS.ReceiveItemPort Msg)
     , error : Maybe String
     }
 
@@ -230,6 +273,7 @@ type Msg
     | RefreshPublicChats
     | WebSocketMessage Server String
     | Receive Server Message
+    | ReceiveLocalStorage LS.Operation (Maybe (LS.Ports Msg)) LS.Key LS.Value
 
 
 emptySettings : ElmChat.Settings Msg
@@ -258,8 +302,8 @@ serverLoadFile =
     "server.txt"
 
 
-init : ( Model, Cmd Msg )
-init =
+init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> ( Model, Cmd Msg )
+init timeZoneOffset ports receiveItemPort =
     { whichPage = MainPage
     , proxyServer = makeProxyServer messageProcessor Receive
     , chats = Dict.empty
@@ -276,7 +320,9 @@ init =
     , hideHelp = False
     , activityDict = Dict.empty
     , time = 0
-    , timeZoneOffset = 240 --default to New York DST
+    , timeZoneOffset = timeZoneOffset
+    , storage = LocalStorage.make ports localStoragePrefix
+    , receiveItemPort = receiveItemPort
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -573,6 +619,9 @@ update msg model =
 
         Receive interface message ->
             receive interface message model
+
+        ReceiveLocalStorage operation ports key value ->
+            model ! []
 
 
 incrementActivityCount : ChatKey -> String -> Int -> Model -> Model

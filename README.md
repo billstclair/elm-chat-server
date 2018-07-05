@@ -2,7 +2,9 @@
 
 An example of using [elm-websocket-framework](http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest) and [elm-websocket-framework-server](http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest).
 
-The client is implemented by [src/ChatClient.elm](src/ChatClient.elm). You can run it in `elm-reactor` by clicking that link. To start `elm-reactor`:
+The client is implemented by [src/ReactorChat.elm](src/ReactorChat.elm) for `elm reactor` or [src/PortChat.elm](src/PortChat.elm) for the shipped application with persistence. You can run it in `elm-reactor` by clicking the `ReactorChat` link.
+
+To start `elm-reactor`:
 
     cd .../elm-chat-server
     elm reactor

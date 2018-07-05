@@ -1,0 +1,31 @@
+<!--------------------------------------------------------------------
+--
+-- index.html
+-- ChatClient top-level HTML
+-- Copyright (c) 2018 Bill St. Clair <billstclair@gmail.com>
+-- Some rights reserved.
+-- Distributed under the MIT License
+-- See LICENSE.txt
+--
+---------------------------------------------------------------------->
+
+<html>
+  <head>
+    <title>Elm Chat</title>
+    <meta charset="UTF-8">
+    <script type='text/javascript' src='index.js'></script>
+    <script type='text/javascript' src='js/ElmLocalStoragePorts.js'></script>
+  </head>
+  <body>
+    <script type='text/javascript'>
+
+var date = new Date();
+var timezoneOffset = date.getTimezoneOffset();
+
+var app = Elm.PortChat.fullscreen(timezoneOffset);
+
+ElmLocalStoragePorts.subscribe(app);
+
+    </script>
+  </body>
+</html>
