@@ -6,7 +6,7 @@ WebSocket Client AND Server in Elm
 Links:
 - [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
 - [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
-- [[https://github.com/billstclair/https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
+- [[https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
 - [[https://xossbow.com/chat/][xossbow.com/chat]]
    
 * Org mode
