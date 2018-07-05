@@ -16,8 +16,6 @@ module ChatClient exposing (..)
 
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
 
-Tables really need to be keyed on (serverUrl, chatid), not just chatid.
-
 Encrypted chats.
 
 Lock private chats so nobody else can join. Should look like the chat doesn't exist to anybody who tries to join. Specify valid usernames, and auto-lock when all have joined.
@@ -63,6 +61,7 @@ import ChatClient.Types
         , Message(..)
         , Player
         , PublicChat
+        , WhichPage(..)
         )
 import Date exposing (Date)
 import Debug exposing (log)
@@ -140,11 +139,6 @@ subscriptions model =
                     )
             ]
         )
-
-
-type WhichPage
-    = MainPage
-    | PublicChatsPage
 
 
 type alias ChatInfo =

@@ -8,6 +8,7 @@
     ],
     "exposed-modules": [],
     "dependencies": {
+        "NoRedInk/elm-decode-pipeline": "3.0.0 <= v < 4.0.0",
         "amitu/elm-formatting": "1.0.0 <= v < 2.0.0",
         "billstclair/elm-chat": "1.2.0 <= v < 2.0.0",
         "billstclair/elm-websocket-framework": "8.2.0 <= v < 9.0.0",

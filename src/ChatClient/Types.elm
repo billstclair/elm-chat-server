@@ -21,9 +21,14 @@ module ChatClient.Types
         , Player
         , PublicChat
         , PublicChatName
+        , SavedChatInfo
+        , SavedModel
+        , WhichPage(..)
         )
 
 import Debug exposing (log)
+import Dict exposing (Dict)
+import ElmChat
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
 import WebSocketFramework.Types exposing (GameId, PlayerId, ServerUrl)
@@ -59,6 +64,39 @@ type alias PublicChat =
 
 type alias ChatKey =
     ( ServerUrl, GameId )
+
+
+type WhichPage
+    = MainPage
+    | PublicChatsPage
+
+
+{-| Persistent form for ChatClient.ChatInfo
+-}
+type alias SavedChatInfo msg =
+    { chatName : String
+    , members : List ( PlayerId, MemberName )
+    , serverUrl : ServerUrl
+    , chatid : GameId
+    , isPublic : Bool
+    , settings : ElmChat.Settings msg
+    }
+
+
+{-| Subset of ChatClient.Model fields that need to be persistent
+-}
+type alias SavedModel msg =
+    { whichPage : WhichPage
+    , chats : Dict ChatKey (SavedChatInfo msg)
+    , currentChat : ChatKey
+    , memberName : String
+    , serverUrl : String
+    , isRemote : Bool
+    , chatName : String
+    , chatid : String
+    , publicChatName : String
+    , hideHelp : Bool
+    }
 
 
 type ErrorKind

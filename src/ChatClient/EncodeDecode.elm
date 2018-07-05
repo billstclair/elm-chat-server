@@ -12,9 +12,20 @@
 
 module ChatClient.EncodeDecode exposing (..)
 
-import ChatClient.Types exposing (ChatKey, ErrorKind(..), Message(..), PublicChat)
-import Dict
+import ChatClient.Types
+    exposing
+        ( ChatKey
+        , ErrorKind(..)
+        , Message(..)
+        , PublicChat
+        , SavedChatInfo
+        , SavedModel
+        , WhichPage(..)
+        )
+import Dict exposing (Dict)
+import ElmChat
 import Json.Decode as JD exposing (Decoder)
+import Json.Decode.Pipeline as DP exposing (decode, required)
 import Json.Encode as JE exposing (Value)
 import WebSocketFramework exposing (decodePlist, unknownMessage)
 import WebSocketFramework.EncodeDecode exposing (genericMessageDecoder)
@@ -446,12 +457,17 @@ for an HTML.select Html.option.
 -}
 encodeChatKey : ChatKey -> String
 encodeChatKey chatkey =
+    chatKeyEncoder chatkey
+        |> JE.encode 0
+
+
+chatKeyEncoder : ChatKey -> Value
+chatKeyEncoder chatkey =
     let
         ( url, id ) =
             chatkey
     in
     JE.list [ JE.string url, JE.string id ]
-        |> JE.encode 0
 
 
 decodeChatKey : String -> Result String ChatKey
@@ -471,3 +487,105 @@ chatKeyDecoder =
                     _ ->
                         JD.fail "Malformed ChatKey"
             )
+
+
+{-| Persistence for ChatClient.Model
+-}
+savedModelEncoder : SavedModel msg -> Value
+savedModelEncoder model =
+    JE.object
+        [ ( "whichPage", whichPageEncoder model.whichPage )
+        , ( "chats", savedChatsEncoder model.chats )
+        , ( "currentChat", chatKeyEncoder model.currentChat )
+        , ( "memberName", JE.string model.memberName )
+        , ( "serverUrl", JE.string model.serverUrl )
+        , ( "isRemote", JE.bool model.isRemote )
+        , ( "chatName", JE.string model.chatName )
+        , ( "chatid", JE.string model.chatid )
+        , ( "publicChatName", JE.string model.publicChatName )
+        , ( "hideHelp", JE.bool model.hideHelp )
+        ]
+
+
+decodeSavedModel : Value -> Result String (SavedModel msg)
+decodeSavedModel value =
+    JD.decodeValue savedModelDecoder value
+
+
+savedModelDecoder : Decoder (SavedModel msg)
+savedModelDecoder =
+    decode SavedModel
+        |> required "whichPage" whichPageDecoder
+        |> required "chats" savedChatsDecoder
+        |> required "currentChat" chatKeyDecoder
+        |> required "memberName" JD.string
+        |> required "serverUrl" JD.string
+        |> required "isRemote" JD.bool
+        |> required "chatName" JD.string
+        |> required "chatid" JD.string
+        |> required "publicChatName" JD.string
+        |> required "hideHelp" JD.bool
+
+
+whichPageEncoder : WhichPage -> Value
+whichPageEncoder whichPage =
+    case whichPage of
+        MainPage ->
+            JE.string "MainPage"
+
+        PublicChatsPage ->
+            JE.string "PublicChatsPage"
+
+
+whichPageDecoder : Decoder WhichPage
+whichPageDecoder =
+    JD.string
+        |> JD.andThen
+            (\page ->
+                case page of
+                    "MainPage" ->
+                        JD.succeed MainPage
+
+                    "PublicChatsPage" ->
+                        JD.succeed PublicChatsPage
+
+                    _ ->
+                        JD.fail <| "Invalid page: " ++ page
+            )
+
+
+savedChatsEncoder : Dict ChatKey (SavedChatInfo msg) -> Value
+savedChatsEncoder chats =
+    JE.list <|
+        List.map
+            (\( key, chat ) ->
+                JE.list
+                    [ chatKeyEncoder key
+                    , savedChatEncoder chat
+                    ]
+            )
+            (Dict.toList chats)
+
+
+savedChatsDecoder : Decoder (Dict ChatKey (SavedChatInfo msg))
+savedChatsDecoder =
+    JD.fail "TODO"
+
+
+savedChatEncoder : SavedChatInfo msg -> Value
+savedChatEncoder chat =
+    JE.object
+        [ ( "chatName", JE.string chat.chatName )
+        , ( "members"
+          , JE.list <|
+                List.map
+                    (\( id, name ) ->
+                        JE.list [ JE.string id, JE.string name ]
+                    )
+                    chat.members
+          )
+        , ( "serverUrl", JE.string chat.serverUrl )
+        , ( "chatid", JE.string chat.chatid )
+        , ( "isPublic", JE.bool chat.isPublic )
+        , ( "settings", ElmChat.settingsEncoder chat.settings )
+        ]
