@@ -56,6 +56,7 @@ import ChatClient.EncodeDecode
         , encodeChatKey
         , messageDecoder
         , messageEncoder
+        , savedModelEncoder
         , stringPairDecoder
         , stringPairEncoder
         )
@@ -111,7 +112,7 @@ import Json.Decode as JD exposing (Decoder)
 import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
 import Json.Encode as JE exposing (Value)
 import List.Extra as LE
-import LocalStorage exposing (LocalStorage)
+import LocalStorage exposing (LocalStorage, getItem, setItem)
 import LocalStorage.SharedTypes as LS
 import Task
 import Time exposing (Time)
@@ -421,8 +422,49 @@ chatServer info model =
             s
 
 
+localStorageModelKey : LS.Key
+localStorageModelKey =
+    "model"
+
+
+localStorageChatKey : ChatKey -> LS.Key
+localStorageChatKey key =
+    "chat:" ++ encodeChatKey key
+
+
+saveModel : Model -> Cmd Msg
+saveModel model =
+    modelToSaved model
+        |> savedModelEncoder
+        |> setItem model.storage localStorageModelKey
+
+
+saveChat : ChatInfo -> Model -> Cmd Msg
+saveChat info model =
+    chatEncoder info
+        |> setItem model.storage
+            (localStorageChatKey <| chatKey info)
+
+
+deleteChat : ChatKey -> Model -> Cmd Msg
+deleteChat chatkey model =
+    setItem model.storage (localStorageChatKey chatkey) JE.null
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        ( mdl, cmd ) =
+            updateInternal msg model
+    in
+    mdl
+        ! [ cmd
+          , saveModel mdl
+          ]
+
+
+updateInternal : Msg -> Model -> ( Model, Cmd Msg )
+updateInternal msg model =
     case msg of
         Noop ->
             model ! []
@@ -799,20 +841,24 @@ receiveRspDelayed chatid memberName message server model =
                             ++ memberName
                             ++ ": "
                             ++ message
+
+                chat2 =
+                    { chat | settings = settings1 }
+
+                mdl =
+                    { model
+                        | chats =
+                            Dict.insert chatkey chat2 model.chats
+                        , error = Nothing
+                    }
             in
-            ( { model
-                | chats =
-                    Dict.insert
-                        chatkey
-                        { chat | settings = settings1 }
-                        model.chats
-                , error = Nothing
-              }
-            , if chatkey == model.currentChat then
-                cmd
-              else
-                Cmd.none
-            )
+            mdl
+                ! [ if chatkey == model.currentChat then
+                        cmd
+                    else
+                        Cmd.none
+                  , saveChat chat2 mdl
+                  ]
 
 
 joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
@@ -844,6 +890,7 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                             { info
                                 | otherMembers =
                                     memberName :: info.otherMembers
+                                , isPublic = isPublic
                             }
 
                         ( settings, cmd ) =
@@ -855,17 +902,21 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
 
                         info3 =
                             { info2 | settings = settings }
+
+                        mdl =
+                            { model
+                                | chats =
+                                    Dict.insert chatkey info3 model.chats
+                                , error = Nothing
+                            }
                     in
-                    { model
-                        | chats =
-                            Dict.insert chatkey info3 model.chats
-                        , error = Nothing
-                    }
+                    mdl
                         ! [ switchPageCmd MainPage
                           , if chatkey == model.currentChat then
                                 cmd
                             else
                                 Cmd.none
+                          , saveChat info3 mdl
                           ]
 
         Just id ->
@@ -910,13 +961,16 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                                         { info
                                             | members =
                                                 ( id, memberName ) :: info.members
+                                            , isPublic = isPublic
+                                        }
+
+                                    mdl2 =
+                                        { mdl
+                                            | chats =
+                                                Dict.insert chatkey info2 mdl.chats
                                         }
                                 in
-                                { mdl
-                                    | chats =
-                                        Dict.insert chatkey info2 mdl.chats
-                                }
-                                    ! []
+                                mdl2 ! [ saveChat info2 mdl2 ]
 
                 NewPendingChat info ->
                     -- Newly create chat
@@ -926,15 +980,21 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                                 | chatid = chatid
                                 , members = [ ( id, memberName ) ]
                                 , otherMembers = otherMembers
+                                , isPublic = isPublic
+                            }
+
+                        mdl2 =
+                            { mdl
+                                | chats =
+                                    Dict.insert chatkey info2 mdl.chats
+                                , currentChat = chatkey
+                                , chatid = chatid
                             }
                     in
-                    { mdl
-                        | chats =
-                            Dict.insert chatkey info2 mdl.chats
-                        , currentChat = chatkey
-                        , chatid = chatid
-                    }
-                        ! [ switchPageCmd MainPage ]
+                    mdl2
+                        ! [ switchPageCmd MainPage
+                          , saveChat info2 mdl2
+                          ]
 
 
 leaveChatRsp : GameId -> MemberName -> Server -> Model -> ( Model, Cmd Msg )
@@ -978,16 +1038,20 @@ leaveChatRspDelayed chatid memberName server model =
                             , otherMembers =
                                 LE.remove memberName info.otherMembers
                         }
+
+                    mdl =
+                        { model
+                            | chats =
+                                Dict.insert chatkey info2 model.chats
+                            , error = Nothing
+                        }
                 in
-                { model
-                    | chats =
-                        Dict.insert chatkey info2 model.chats
-                    , error = Nothing
-                }
+                mdl
                     ! [ if chatkey == model.currentChat then
                             cmd
                         else
                             Cmd.none
+                      , saveChat info2 mdl
                       ]
             else
                 -- A local member left
@@ -1029,7 +1093,7 @@ leaveChatRspDelayed chatid memberName server model =
                                 Just chat ->
                                     chatKey chat
                             , servers
-                            , cmd
+                            , Cmd.batch [ cmd, deleteChat chatkey model ]
                             )
                         else
                             let
@@ -1044,7 +1108,7 @@ leaveChatRspDelayed chatid memberName server model =
                                 model.chats
                             , chatkey
                             , model.connectedServers
-                            , Cmd.none
+                            , saveChat chat model
                             )
                 in
                 { model
