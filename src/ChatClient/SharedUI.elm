@@ -285,7 +285,6 @@ type Msg
     | ChangeChat String
     | NewChat
     | JoinChat
-    | JoinChatKey ChatKey MemberName
     | LeaveChat PlayerId
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
@@ -390,18 +389,13 @@ send server model message =
     WebSocketFramework.send server <| log "send" message
 
 
-getServer : Maybe ServerUrl -> Model -> ( Model, Maybe Server )
-getServer serverUrl model =
+getServer : Model -> ( Model, Maybe Server )
+getServer model =
     let
-        ( isRemote, url ) =
-            case serverUrl of
-                Nothing ->
-                    ( model.isRemote, model.serverUrl )
-
-                Just url ->
-                    ( url /= "", url )
+        url =
+            model.serverUrl
     in
-    if not isRemote then
+    if not model.isRemote then
         ( model, Nothing )
     else
         case Dict.get url model.connectedServers of
@@ -429,11 +423,11 @@ makeServer url =
         Just <| WebSocketFramework.makeServer messageEncoder url Noop
 
 
-newChatInfo : Maybe ServerUrl -> Model -> ( Model, ChatInfo )
-newChatInfo serverUrl model =
+newChatInfo : Model -> ( Model, ChatInfo )
+newChatInfo model =
     let
         ( mdl, server ) =
-            getServer serverUrl model
+            getServer model
     in
     ( mdl
     , { chatName = model.chatName
@@ -596,7 +590,7 @@ updateInternal msg model =
         NewChat ->
             let
                 ( mdl, info ) =
-                    newChatInfo Nothing model
+                    newChatInfo model
 
                 server =
                     chatServer info mdl
@@ -612,13 +606,6 @@ updateInternal msg model =
 
         JoinChat ->
             joinChat model.chatid model
-
-        JoinChatKey chatkey memberName ->
-            let
-                ( serverUrl, chatid ) =
-                    chatkey
-            in
-            joinChatKey chatid memberName (Just serverUrl) model
 
         LeaveChat memberid ->
             case Dict.get model.currentChat model.chats of
@@ -651,7 +638,7 @@ updateInternal msg model =
         NewPublicChat ->
             let
                 ( mdl, info ) =
-                    newChatInfo Nothing
+                    newChatInfo
                         { model
                             | chatName =
                                 model.publicChatName
@@ -674,7 +661,7 @@ updateInternal msg model =
         RefreshPublicChats ->
             let
                 ( mdl2, maybeServer ) =
-                    getServer Nothing model
+                    getServer model
 
                 server =
                     case maybeServer of
@@ -1227,7 +1214,7 @@ switchPage whichPage model =
 
         ( mdl, maybeServer ) =
             if isPublic && model.isRemote then
-                getServer Nothing model
+                getServer model
             else
                 ( { model
                     | connectedServers =
@@ -1284,23 +1271,13 @@ currentServerChatKey chatid model =
     )
 
 
-joinChat : GameId -> Model -> ( Model, Cmd Msg )
-joinChat chatid model =
-    joinChatKey chatid model.memberName Nothing model
-
-
 {-| This needs to handle timeout. Especially during startup.
 -}
-joinChatKey : GameId -> MemberName -> Maybe ServerUrl -> Model -> ( Model, Cmd Msg )
-joinChatKey chatid memberName serverUrl model =
+joinChat : GameId -> Model -> ( Model, Cmd Msg )
+joinChat chatid model =
     let
         chatkey =
-            case serverUrl of
-                Nothing ->
-                    currentServerChatKey chatid model
-
-                Just url ->
-                    ( url, chatid )
+            currentServerChatKey chatid model
 
         ( ( mdl, info ), existing ) =
             case Dict.get chatkey model.chats of
@@ -1308,7 +1285,7 @@ joinChatKey chatid memberName serverUrl model =
                     ( ( model, chat ), True )
 
                 Nothing ->
-                    ( newChatInfo serverUrl model, False )
+                    ( newChatInfo model, False )
 
         server =
             chatServer info mdl
@@ -1324,7 +1301,7 @@ joinChatKey chatid memberName serverUrl model =
         ! [ send server mdl <|
                 JoinChatReq
                     { chatid = chatid
-                    , memberName = memberName
+                    , memberName = model.memberName
                     }
           ]
 
@@ -1971,11 +1948,23 @@ modelToSaved model =
 
 savedToModel : SavedModel -> Model -> Model
 savedToModel savedModel defaults =
+    let
+        chat =
+            case Dict.get savedModel.currentChat defaults.chats of
+                Nothing ->
+                    case List.head <| Dict.keys defaults.chats of
+                        Nothing ->
+                            emptyChatKey
+
+                        Just key ->
+                            key
+
+                Just _ ->
+                    savedModel.currentChat
+    in
     { defaults
         | whichPage = savedModel.whichPage
-        , chats = Dict.empty
-        , publicChats = []
-        , currentChat = savedModel.currentChat
+        , currentChat = chat
         , memberName = savedModel.memberName
         , serverUrl = savedModel.serverUrl
         , isRemote = savedModel.isRemote
@@ -2050,12 +2039,12 @@ type RestoreState
         { key : ChatKey
         , keys : List ChatKey
         , chats : List ChatInfo
-        , currentChat : ChatKey
+        , savedModel : SavedModel
         }
     | RestoreReconnectChats
         { waiting : ChatInfo
         , chats : List ChatInfo
-        , currentChat : ChatKey
+        , savedModel : SavedModel
         }
     | RestoreDone
 
@@ -2081,12 +2070,12 @@ receiveLocalStorage operation key value model =
     case operation of
         LS.GetItemOperation ->
             let
-                nextChat : ChatKey -> List ChatInfo -> List ChatKey -> ( Model, Cmd Msg )
+                nextChat : SavedModel -> List ChatInfo -> List ChatKey -> ( Model, Cmd Msg )
                 nextChat =
-                    \currentChat chats chatKeys ->
+                    \savedModel chats chatKeys ->
                         case List.head chatKeys of
                             Nothing ->
-                                startReconnectingChats currentChat chats model
+                                startReconnectingChats savedModel chats model
 
                             Just key ->
                                 ( { model
@@ -2095,7 +2084,7 @@ receiveLocalStorage operation key value model =
                                             { key = key
                                             , keys = cdr chatKeys
                                             , chats = chats
-                                            , currentChat = currentChat
+                                            , savedModel = savedModel
                                             }
                                   }
                                 , LocalStorage.getItem
@@ -2123,21 +2112,11 @@ receiveLocalStorage operation key value model =
                             Ok mdl ->
                                 let
                                     ( mdl2, cmd ) =
-                                        nextChat mdl.currentChat [] mdl.chatKeys
+                                        nextChat mdl [] mdl.chatKeys
                                 in
-                                { mdl2
-                                    | whichPage = mdl.whichPage
-                                    , memberName = mdl.memberName
-                                    , serverUrl = mdl.serverUrl
-                                    , isRemote = mdl.isRemote
-                                    , chatName = mdl.chatName
-                                    , chatid = mdl.chatid
-                                    , publicChatName = mdl.publicChatName
-                                    , hideHelp = mdl.hideHelp
-                                }
-                                    ! [ cmd ]
+                                mdl2 ! [ cmd ]
 
-                RestoreReadChats { key, keys, chats, currentChat } ->
+                RestoreReadChats { key, keys, chats, savedModel } ->
                     let
                         ( chats2, mdl ) =
                             if value == JE.null then
@@ -2156,7 +2135,7 @@ receiveLocalStorage operation key value model =
                                         )
 
                         ( mdl2, cmd ) =
-                            nextChat currentChat chats2 keys
+                            nextChat savedModel chats2 keys
                     in
                     mdl2
                         ! [ cmd
@@ -2215,8 +2194,8 @@ reconnectToChat chat model =
     )
 
 
-startReconnectingChats : ChatKey -> List ChatInfo -> Model -> ( Model, Cmd Msg )
-startReconnectingChats currentChat chats model =
+startReconnectingChats : SavedModel -> List ChatInfo -> Model -> ( Model, Cmd Msg )
+startReconnectingChats savedModel chats model =
     let
         ( restoreState, chat ) =
             case chats of
@@ -2227,7 +2206,7 @@ startReconnectingChats currentChat chats model =
                     ( RestoreReconnectChats
                         { waiting = chat
                         , chats = rest
-                        , currentChat = currentChat
+                        , savedModel = savedModel
                         }
                     , Just chat
                     )
@@ -2237,7 +2216,7 @@ startReconnectingChats currentChat chats model =
     in
     case chat of
         Nothing ->
-            ( mdl, Cmd.none )
+            ( savedToModel savedModel mdl, Cmd.none )
 
         Just c ->
             reconnectToChat c mdl
@@ -2274,9 +2253,47 @@ nextMemberName memberName =
         Nothing
 
 
-joinChatCmd : ChatInfo -> MemberName -> Cmd Msg
-joinChatCmd chat memberName =
-    Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
+populateServer : ChatInfo -> Model -> Model
+populateServer chat model =
+    let
+        ( url, isRemote ) =
+            case chat.server of
+                Nothing ->
+                    ( model.serverUrl, False )
+
+                Just server ->
+                    ( serverUrl server, True )
+    in
+    { model
+        | serverUrl = url
+        , isRemote = isRemote
+    }
+
+
+joinAChat : ChatInfo -> MemberName -> Model -> ( Model, Cmd Msg )
+joinAChat chat memberName model =
+    populateServer chat
+        { model
+            | memberName = memberName
+            , chatName = chat.chatName
+            , chatid = chat.chatid
+        }
+        ! [ Task.perform (\() -> JoinChat) <| Task.succeed () ]
+
+
+makeAPublicChat : ChatInfo -> MemberName -> Model -> ( Model, Cmd Msg )
+makeAPublicChat chat memberName model =
+    populateServer chat
+        { model
+            | memberName = memberName
+            , publicChatName = chat.chatid
+        }
+        ! [ Task.perform (\() -> NewPublicChat) <| Task.succeed () ]
+
+
+genericUnknownRequestError : ErrorKind
+genericUnknownRequestError =
+    UnknownRequestError { request = "Unknown" }
 
 
 continueRestoreAfterErrorRsp : ErrorKind -> String -> Model -> ( Model, Cmd Msg )
@@ -2292,50 +2309,44 @@ continueRestoreAfterErrorRsp errorKind errmsg model =
                     case waiting.members of
                         [] ->
                             continueRestoreAfterErrorRsp
-                                (UnknownChatidError
-                                    { chatid = waiting.chatid }
-                                )
+                                genericUnknownRequestError
                                 "No members"
                                 model
 
                         ( _, memberName ) :: _ ->
-                            model
-                                ! [ joinChatCmd waiting <|
-                                        removeTrailingDots memberName
-                                  ]
+                            joinAChat waiting memberName model
 
                 MemberExistsError { memberName } ->
                     case nextMemberName memberName of
                         Nothing ->
                             continueRestoreAfterErrorRsp
-                                (UnknownChatidError
-                                    { chatid = waiting.chatid }
-                                )
+                                genericUnknownRequestError
                                 "Out of trailing dots"
                                 model
 
                         Just name ->
+                            joinAChat waiting name model
+
+                UnknownChatidError { chatid } ->
+                    if not waiting.isPublic then
+                        continueRestoreAfterErrorRsp
+                            genericUnknownRequestError
+                            "Unknown private chat"
                             model
-                                ! [ joinChatCmd waiting name ]
+                    else
+                        --It's an unknown public chat. Recreate it.
+                        case waiting.members of
+                            [] ->
+                                continueRestoreAfterErrorRsp
+                                    genericUnknownRequestError
+                                    "No members"
+                                    model
+
+                            ( _, memberName ) :: _ ->
+                                makeAPublicChat waiting memberName model
 
                 _ ->
-                    case chats of
-                        [] ->
-                            { model | restoreState = RestoreDone } ! []
-
-                        chat :: rest ->
-                            let
-                                mdl =
-                                    { model
-                                        | restoreState =
-                                            RestoreReconnectChats
-                                                { record
-                                                    | waiting = chat
-                                                    , chats = rest
-                                                }
-                                    }
-                            in
-                            reconnectToChat chat mdl
+                    startReconnectingChats record.savedModel chats model
 
         _ ->
             { model
@@ -2345,18 +2356,73 @@ continueRestoreAfterErrorRsp errorKind errmsg model =
                 ! []
 
 
+{-| Called when we get a ReceiveRsp after sending an empty message.
+
+The old memberid still exists on the server, so we can just use it.
+Need to record the chat.
+
+-}
 continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
 continueRestoreAfterReceiveRsp model =
-    -- TODO
-    model ! []
+    case model.restoreState of
+        RestoreReconnectChats { savedModel, waiting, chats } ->
+            let
+                mdl =
+                    case List.head waiting.members of
+                        Nothing ->
+                            model
+
+                        Just pair ->
+                            let
+                                chatkey =
+                                    chatKey waiting
+
+                                -- We have no way to restore otherMembers.
+                                -- Need to have another message for that.
+                                chat =
+                                    { waiting
+                                        | members = [ pair ]
+                                    }
+                            in
+                            { model
+                                | chats =
+                                    Dict.insert chatkey chat model.chats
+                            }
+            in
+            startReconnectingChats savedModel chats mdl
+
+        _ ->
+            { model | restoreState = RestoreDone } ! []
 
 
+{-| We successfully rejoined a chat.
+
+Just need to restore the chat history, and continue the restore.
+
+-}
 continueRestoreAfterJoinRsp : Model -> ( Model, Cmd Msg )
 continueRestoreAfterJoinRsp model =
     case model.restoreState of
-        -- TODO
-        RestoreReconnectChats { waiting } ->
-            model ! []
+        RestoreReconnectChats { savedModel, waiting, chats } ->
+            let
+                chatkey =
+                    chatKey waiting
+
+                mdl =
+                    case Dict.get chatkey model.chats of
+                        Nothing ->
+                            model
+
+                        Just chat ->
+                            { model
+                                | chats =
+                                    Dict.insert chatkey
+                                        { chat | settings = waiting.settings }
+                                        model.chats
+                            }
+            in
+            startReconnectingChats savedModel chats mdl
 
         _ ->
-            model ! []
+            model
+                ! []
