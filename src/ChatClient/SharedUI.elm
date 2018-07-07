@@ -73,6 +73,7 @@ import ChatClient.Interface exposing (messageProcessor, messageToGameid)
 import ChatClient.Types
     exposing
         ( ChatKey
+        , ErrorKind(..)
         , GameState
         , MemberName
         , MemberNames
@@ -121,7 +122,7 @@ import Json.Decode as JD exposing (Decoder)
 import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
 import Json.Encode as JE exposing (Value)
 import List.Extra as LE
-import LocalStorage exposing (LocalStorage, getItem, setItem)
+import LocalStorage exposing (LocalStorage)
 import LocalStorage.SharedTypes as LS
 import Task
 import Time exposing (Time)
@@ -284,6 +285,7 @@ type Msg
     | ChangeChat String
     | NewChat
     | JoinChat
+    | JoinChatKey ChatKey
     | LeaveChat PlayerId
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
@@ -387,15 +389,20 @@ send server model message =
     WebSocketFramework.send server <| log "send" message
 
 
-getServer : Model -> ( Model, Maybe Server )
-getServer model =
-    if not model.isRemote then
+getServer : Maybe ServerUrl -> Model -> ( Model, Maybe Server )
+getServer serverUrl model =
+    let
+        ( isRemote, url ) =
+            case serverUrl of
+                Nothing ->
+                    ( model.isRemote, model.serverUrl )
+
+                Just url ->
+                    ( url /= "", url )
+    in
+    if not isRemote then
         ( model, Nothing )
     else
-        let
-            url =
-                model.serverUrl
-        in
         case Dict.get url model.connectedServers of
             Just server ->
                 ( model, Just server )
@@ -421,11 +428,11 @@ makeServer url =
         Just <| WebSocketFramework.makeServer messageEncoder url Noop
 
 
-newChatInfo : Model -> ( Model, ChatInfo )
-newChatInfo model =
+newChatInfo : Maybe ServerUrl -> Model -> ( Model, ChatInfo )
+newChatInfo serverUrl model =
     let
         ( mdl, server ) =
-            getServer model
+            getServer serverUrl model
     in
     ( mdl
     , { chatName = model.chatName
@@ -461,21 +468,30 @@ localStorageChatKey key =
 
 saveModel : Model -> Cmd Msg
 saveModel model =
-    modelToSaved model
-        |> savedModelEncoder
-        |> setItem model.storage localStorageModelKey
+    if model.receiveItemPort == Nothing then
+        Cmd.none
+    else
+        modelToSaved model
+            |> savedModelEncoder
+            |> LocalStorage.setItem model.storage localStorageModelKey
 
 
 saveChat : ChatInfo -> Model -> Cmd Msg
 saveChat info model =
-    chatEncoder info
-        |> setItem model.storage
-            (localStorageChatKey <| chatKey info)
+    if model.receiveItemPort == Nothing then
+        Cmd.none
+    else
+        chatEncoder info
+            |> LocalStorage.setItem model.storage
+                (localStorageChatKey <| chatKey info)
 
 
 deleteChat : ChatKey -> Model -> Cmd Msg
 deleteChat chatkey model =
-    setItem model.storage (localStorageChatKey chatkey) JE.null
+    if model.receiveItemPort == Nothing then
+        Cmd.none
+    else
+        LocalStorage.setItem model.storage (localStorageChatKey chatkey) JE.null
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -579,7 +595,7 @@ updateInternal msg model =
         NewChat ->
             let
                 ( mdl, info ) =
-                    newChatInfo model
+                    newChatInfo Nothing model
 
                 server =
                     chatServer info mdl
@@ -595,6 +611,13 @@ updateInternal msg model =
 
         JoinChat ->
             joinChat model.chatid model
+
+        JoinChatKey chatkey ->
+            let
+                ( serverUrl, chatid ) =
+                    chatkey
+            in
+            joinChatKey chatid (Just serverUrl) model
 
         LeaveChat memberid ->
             case Dict.get model.currentChat model.chats of
@@ -627,7 +650,7 @@ updateInternal msg model =
         NewPublicChat ->
             let
                 ( mdl, info ) =
-                    newChatInfo
+                    newChatInfo Nothing
                         { model
                             | chatName =
                                 model.publicChatName
@@ -650,7 +673,7 @@ updateInternal msg model =
         RefreshPublicChats ->
             let
                 ( mdl2, maybeServer ) =
-                    getServer model
+                    getServer Nothing model
 
                 server =
                     case maybeServer of
@@ -823,12 +846,17 @@ receive interface message model =
             { mdl | publicChats = chats }
                 ! []
 
-        ErrorRsp { message } ->
-            { mdl
-                | error = Just message
-                , pendingChat = NoPendingChat
-            }
-                ! []
+        ErrorRsp error ->
+            case model.restoreState of
+                RestoreDone ->
+                    { mdl
+                        | error = Just error.message
+                        , pendingChat = NoPendingChat
+                    }
+                        ! []
+
+                _ ->
+                    continueRestoreAfterReceiveError error.kind model
 
         _ ->
             { mdl
@@ -890,8 +918,33 @@ receiveRspDelayed chatid memberName message server model =
 
 joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
 joinChatRsp chatid memberid memberName otherMembers isPublic server model =
-    model
-        ! [ delayedAction <| joinChatRspDelayed chatid memberid memberName otherMembers isPublic server ]
+    case model.restoreState of
+        RestoreDone ->
+            model
+                ! [ delayedAction <|
+                        joinChatRspDelayed chatid
+                            memberid
+                            memberName
+                            otherMembers
+                            isPublic
+                            server
+                  ]
+
+        _ ->
+            let
+                ( mdl, cmd ) =
+                    joinChatRspDelayed chatid
+                        memberid
+                        memberName
+                        otherMembers
+                        isPublic
+                        server
+                        model
+
+                ( mdl2, cmd2 ) =
+                    continueRestoreAfterJoin mdl
+            in
+            mdl2 ! [ cmd, cmd2 ]
 
 
 joinChatRspDelayed : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
@@ -1163,7 +1216,7 @@ switchPage whichPage model =
 
         ( mdl, maybeServer ) =
             if isPublic && model.isRemote then
-                getServer model
+                getServer Nothing model
             else
                 ( { model
                     | connectedServers =
@@ -1222,9 +1275,21 @@ currentServerChatKey chatid model =
 
 joinChat : GameId -> Model -> ( Model, Cmd Msg )
 joinChat chatid model =
+    joinChatKey chatid Nothing model
+
+
+{-| This needs to handle timeout. Especially during startup.
+-}
+joinChatKey : GameId -> Maybe ServerUrl -> Model -> ( Model, Cmd Msg )
+joinChatKey chatid serverUrl model =
     let
         chatkey =
-            currentServerChatKey chatid model
+            case serverUrl of
+                Nothing ->
+                    currentServerChatKey chatid model
+
+                Just url ->
+                    ( url, chatid )
 
         ( ( mdl, info ), existing ) =
             case Dict.get chatkey model.chats of
@@ -1232,7 +1297,7 @@ joinChat chatid model =
                     ( ( model, chat ), True )
 
                 Nothing ->
-                    ( newChatInfo model, False )
+                    ( newChatInfo serverUrl model, False )
 
         server =
             chatServer info mdl
@@ -1990,6 +2055,11 @@ type RestoreState
     | RestoreDone
 
 
+joinChatCmd : ChatInfo -> Cmd Msg
+joinChatCmd chat =
+    Task.perform JoinChatKey (Task.succeed <| chatKey chat)
+
+
 partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( RestoreState, Cmd Msg )
 partitionRestoredChats currentChat chats model =
     let
@@ -2011,8 +2081,7 @@ partitionRestoredChats currentChat chats model =
                         , public = rest
                         , currentChat = currentChat
                         }
-                      -- TODO: join public chat (Will need a timeout)
-                    , Cmd.none
+                    , joinChatCmd chat
                     )
 
         chat :: rest ->
@@ -2022,8 +2091,7 @@ partitionRestoredChats currentChat chats model =
                 , public = public
                 , currentChat = currentChat
                 }
-              -- TODO: join private chat (Will need a timeout)
-            , Cmd.none
+            , joinChatCmd chat
             )
 
 
@@ -2039,6 +2107,10 @@ cdr list =
 
 receiveLocalStorage : LS.Operation -> LS.Key -> LS.Value -> Model -> ( Model, Cmd Msg )
 receiveLocalStorage operation key value model =
+    let
+        op =
+            log ("receiveLocalStorage " ++ toString operation ++ " " ++ key) value
+    in
     case operation of
         LS.GetItemOperation ->
             let
@@ -2130,3 +2202,15 @@ receiveLocalStorage operation key value model =
 
         _ ->
             model ! []
+
+
+continueRestoreAfterReceiveError : ErrorKind -> Model -> ( Model, Cmd Msg )
+continueRestoreAfterReceiveError message model =
+    -- TODO
+    model ! []
+
+
+continueRestoreAfterJoin : Model -> ( Model, Cmd Msg )
+continueRestoreAfterJoin model =
+    -- TODO
+    model ! []
