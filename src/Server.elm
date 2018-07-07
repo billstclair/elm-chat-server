@@ -115,12 +115,21 @@ type alias Model =
 messageSender : ServerMessageSender ServerModel Message GameState Player
 messageSender model socket state request response =
     case response of
-        ReceiveRsp { chatid } ->
+        ReceiveRsp { chatid, message } ->
             model
-                ! [ sendToAll chatid
-                        model
-                        messageEncoder
-                        response
+                ! [ if message == "" then
+                        -- Empty message is to test for existence of memberid.
+                        -- Send it back to only the requester.
+                        sendToOne (verbose model)
+                            messageEncoder
+                            response
+                            outputPort
+                            socket
+                    else
+                        sendToAll chatid
+                            model
+                            messageEncoder
+                            response
                   ]
 
         JoinChatRsp joinrsp ->

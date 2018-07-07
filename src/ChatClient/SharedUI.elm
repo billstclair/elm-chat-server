@@ -285,7 +285,7 @@ type Msg
     | ChangeChat String
     | NewChat
     | JoinChat
-    | JoinChatKey ChatKey
+    | JoinChatKey ChatKey MemberName
     | LeaveChat PlayerId
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
@@ -612,12 +612,12 @@ updateInternal msg model =
         JoinChat ->
             joinChat model.chatid model
 
-        JoinChatKey chatkey ->
+        JoinChatKey chatkey memberName ->
             let
                 ( serverUrl, chatid ) =
                     chatkey
             in
-            joinChatKey chatid (Just serverUrl) model
+            joinChatKey chatid memberName (Just serverUrl) model
 
         LeaveChat memberid ->
             case Dict.get model.currentChat model.chats of
@@ -873,8 +873,29 @@ delayedAction updater =
 
 receiveRsp : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
 receiveRsp chatid memberName message server model =
-    model
-        ! [ delayedAction <| receiveRspDelayed chatid memberName message server ]
+    case model.restoreState of
+        RestoreDone ->
+            model
+                ! [ delayedAction <|
+                        receiveRspDelayed chatid
+                            memberName
+                            message
+                            server
+                  ]
+
+        _ ->
+            let
+                ( mdl, cmd ) =
+                    receiveRspDelayed chatid
+                        memberName
+                        message
+                        server
+                        model
+
+                ( mdl2, cmd2 ) =
+                    continueRestoreAfterReceive mdl
+            in
+            mdl2 ! ( cmd, cmd2 )
 
 
 receiveRspDelayed : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
@@ -1275,13 +1296,13 @@ currentServerChatKey chatid model =
 
 joinChat : GameId -> Model -> ( Model, Cmd Msg )
 joinChat chatid model =
-    joinChatKey chatid Nothing model
+    joinChatKey chatid model.memberName Nothing model
 
 
 {-| This needs to handle timeout. Especially during startup.
 -}
-joinChatKey : GameId -> Maybe ServerUrl -> Model -> ( Model, Cmd Msg )
-joinChatKey chatid serverUrl model =
+joinChatKey : GameId -> MemberName -> Maybe ServerUrl -> Model -> ( Model, Cmd Msg )
+joinChatKey chatid memberName serverUrl model =
     let
         chatkey =
             case serverUrl of
@@ -1313,7 +1334,7 @@ joinChatKey chatid serverUrl model =
         ! [ send server model <|
                 JoinChatReq
                     { chatid = chatid
-                    , memberName = model.memberName
+                    , memberName = memberName
                     }
           ]
 
@@ -2057,7 +2078,12 @@ type RestoreState
 
 joinChatCmd : ChatInfo -> Cmd Msg
 joinChatCmd chat =
-    Task.perform JoinChatKey (Task.succeed <| chatKey chat)
+    case chat.members of
+        [] ->
+            Cmd.none
+
+        ( _, memberName ) :: _ ->
+            Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
 
 
 partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( RestoreState, Cmd Msg )
@@ -2076,12 +2102,28 @@ partitionRestoredChats currentChat chats model =
                     ( RestoreDone, Cmd.none )
 
                 chat :: rest ->
+                    let
+                        server =
+                            chatServer chat model
+                    in
                     ( RestorePublicChats
                         { waiting = chat
                         , public = rest
                         , currentChat = currentChat
                         }
-                    , joinChatCmd chat
+                    , send server model <|
+                        -- Try first to reactive existing memberid
+                        SendReq
+                            { memberid =
+                                case chat.members of
+                                    [] ->
+                                        -- won't happen, but will error, so all OK.
+                                        ""
+
+                                    ( memberid, _ ) :: _ ->
+                                        memberid
+                            , message = ""
+                            }
                     )
 
         chat :: rest ->
@@ -2212,5 +2254,11 @@ continueRestoreAfterReceiveError message model =
 
 continueRestoreAfterJoin : Model -> ( Model, Cmd Msg )
 continueRestoreAfterJoin model =
+    -- TODO
+    model ! []
+
+
+continueRestoreAfterReceive : Model -> ( Model, Cmd Msg )
+continueRestoreAfterReceive model =
     -- TODO
     model ! []

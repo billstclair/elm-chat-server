@@ -23,7 +23,6 @@ import ChatClient.Types
         , WhichPage(..)
         )
 import Dict exposing (Dict)
-import ElmChat
 import Json.Decode as JD exposing (Decoder)
 import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
 import Json.Encode as JE exposing (Value)

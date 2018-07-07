@@ -27,7 +27,6 @@ module ChatClient.Types
 
 import Debug exposing (log)
 import Dict exposing (Dict)
-import ElmChat
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
 import WebSocketFramework.Types
