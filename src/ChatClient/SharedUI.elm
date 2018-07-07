@@ -857,7 +857,7 @@ receive interface message model =
                         ! []
 
                 _ ->
-                    continueRestoreAfterReceiveError error.kind model
+                    continueRestoreAfterErrorRsp error.kind model
 
         _ ->
             { mdl
@@ -885,18 +885,7 @@ receiveRsp chatid memberName message server model =
                   ]
 
         _ ->
-            let
-                ( mdl, cmd ) =
-                    receiveRspDelayed chatid
-                        memberName
-                        message
-                        server
-                        model
-
-                ( mdl2, cmd2 ) =
-                    continueRestoreAfterReceive mdl
-            in
-            mdl2 ! [ cmd, cmd2 ]
+            continueRestoreAfterReceiveRsp model
 
 
 receiveRspDelayed : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
@@ -964,7 +953,7 @@ joinChatRsp chatid memberid memberName otherMembers isPublic server model =
                         model
 
                 ( mdl2, cmd2 ) =
-                    continueRestoreAfterJoin mdl
+                    continueRestoreAfterJoinRsp mdl
             in
             mdl2 ! [ cmd, cmd2 ]
 
@@ -1332,7 +1321,7 @@ joinChatKey chatid memberName serverUrl model =
                 NewPendingChat info
         , error = Nothing
     }
-        ! [ send server model <|
+        ! [ send server mdl <|
                 JoinChatReq
                     { chatid = chatid
                     , memberName = memberName
@@ -2087,13 +2076,38 @@ joinChatCmd chat =
             Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
 
 
-reconnectToChat : ChatInfo -> Model -> Cmd Msg
+{-| This needs to register the server so the subscription will happen.
+
+That means it must return (Model, Cmd Msg).
+
+TODO
+
+-}
+reconnectToChat : ChatInfo -> Model -> ( Model, Cmd Msg )
 reconnectToChat chat model =
     let
-        server =
-            chatServer chat model
+        ( server, mdl ) =
+            case chat.server of
+                Nothing ->
+                    ( model.proxyServer, model )
+
+                Just s ->
+                    case Dict.get (serverUrl s) model.connectedServers of
+                        Nothing ->
+                            ( s
+                            , { model
+                                | connectedServers =
+                                    Dict.insert (serverUrl s)
+                                        s
+                                        model.connectedServers
+                              }
+                            )
+
+                        Just s2 ->
+                            ( s2, model )
     in
-    send server model <|
+    ( mdl
+    , send server model <|
         -- Try first to reactivate existing memberid
         SendReq
             { memberid =
@@ -2107,9 +2121,10 @@ reconnectToChat chat model =
                             memberid
             , message = ""
             }
+    )
 
 
-partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( RestoreState, Cmd Msg )
+partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( Model, Cmd Msg )
 partitionRestoredChats currentChat chats model =
     let
         private =
@@ -2118,32 +2133,46 @@ partitionRestoredChats currentChat chats model =
         public =
             List.filter .isPublic chats
     in
-    case private of
-        [] ->
-            case public of
+    let
+        ( restoreState, chat ) =
+            case private of
                 [] ->
-                    ( RestoreDone, Cmd.none )
+                    case public of
+                        [] ->
+                            ( RestoreDone, Nothing )
+
+                        chat :: rest ->
+                            ( RestorePublicChats
+                                { waiting = chat
+                                , public = rest
+                                , currentChat = currentChat
+                                }
+                            , Just chat
+                            )
 
                 chat :: rest ->
-                    ( RestorePublicChats
+                    ( RestorePrivateChats
                         { waiting = chat
-                        , public = rest
+                        , private = rest
+                        , public = public
                         , currentChat = currentChat
                         }
-                    , reconnectToChat chat model
+                    , Just chat
                     )
 
-        chat :: rest ->
-            ( RestorePrivateChats
-                { waiting = chat
-                , private = rest
-                , public = public
-                , currentChat = currentChat
-                }
-            , reconnectToChat chat model
-            )
+        mdl =
+            { model | restoreState = restoreState }
+    in
+    case chat of
+        Nothing ->
+            ( mdl, Cmd.none )
+
+        Just c ->
+            reconnectToChat c mdl
 
 
+{-| Sprechen Sie Lisp?
+-}
 cdr : List a -> List a
 cdr list =
     case List.tail list of
@@ -2163,7 +2192,7 @@ receiveLocalStorage operation key value model =
     case operation of
         LS.GetItemOperation ->
             let
-                nextChat : ChatKey -> List ChatInfo -> List ChatKey -> ( RestoreState, Cmd Msg )
+                nextChat : ChatKey -> List ChatInfo -> List ChatKey -> ( Model, Cmd Msg )
                 nextChat =
                     \currentChat chats chatKeys ->
                         case List.head chatKeys of
@@ -2171,12 +2200,15 @@ receiveLocalStorage operation key value model =
                                 partitionRestoredChats currentChat chats model
 
                             Just key ->
-                                ( RestoreReadChats
-                                    { key = key
-                                    , keys = cdr chatKeys
-                                    , chats = chats
-                                    , currentChat = currentChat
-                                    }
+                                ( { model
+                                    | restoreState =
+                                        RestoreReadChats
+                                            { key = key
+                                            , keys = cdr chatKeys
+                                            , chats = chats
+                                            , currentChat = currentChat
+                                            }
+                                  }
                                 , LocalStorage.getItem
                                     model.storage
                                   <|
@@ -2201,10 +2233,10 @@ receiveLocalStorage operation key value model =
 
                             Ok mdl ->
                                 let
-                                    ( restoreState, cmd ) =
+                                    ( mdl2, cmd ) =
                                         nextChat mdl.currentChat [] mdl.chatKeys
                                 in
-                                { model
+                                { mdl2
                                     | whichPage = mdl.whichPage
                                     , memberName = mdl.memberName
                                     , serverUrl = mdl.serverUrl
@@ -2213,7 +2245,6 @@ receiveLocalStorage operation key value model =
                                     , chatid = mdl.chatid
                                     , publicChatName = mdl.publicChatName
                                     , hideHelp = mdl.hideHelp
-                                    , restoreState = restoreState
                                 }
                                     ! [ cmd ]
 
@@ -2235,10 +2266,10 @@ receiveLocalStorage operation key value model =
                                           }
                                         )
 
-                        ( restoreState, cmd ) =
+                        ( mdl2, cmd ) =
                             nextChat currentChat chats2 keys
                     in
-                    { mdl | restoreState = restoreState }
+                    mdl2
                         ! [ cmd
 
                           -- Delete stored chat
@@ -2254,19 +2285,28 @@ receiveLocalStorage operation key value model =
             model ! []
 
 
-continueRestoreAfterReceiveError : ErrorKind -> Model -> ( Model, Cmd Msg )
-continueRestoreAfterReceiveError kind model =
+continueRestoreAfterErrorRsp : ErrorKind -> Model -> ( Model, Cmd Msg )
+continueRestoreAfterErrorRsp kind model =
     -- TODO
     model ! []
 
 
-continueRestoreAfterJoin : Model -> ( Model, Cmd Msg )
-continueRestoreAfterJoin model =
-    -- TODO
-    model ! []
+continueRestoreAfterJoinRsp : Model -> ( Model, Cmd Msg )
+continueRestoreAfterJoinRsp model =
+    case model.restoreState of
+        -- TODO
+        RestorePrivateChats { waiting } ->
+            model ! []
+
+        -- TODO
+        RestorePublicChats { waiting } ->
+            model ! []
+
+        _ ->
+            model ! []
 
 
-continueRestoreAfterReceive : Model -> ( Model, Cmd Msg )
-continueRestoreAfterReceive model =
+continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
+continueRestoreAfterReceiveRsp model =
     -- TODO
     model ! []
