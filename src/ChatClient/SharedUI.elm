@@ -22,6 +22,14 @@ module ChatClient.SharedUI
 
 Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
 
+"Clear" button by the chat "ID" to clear the chat output.
+
+"Mute" another member by clicking on their name in the "Members" list.
+"Unmute" by clicking on their name in the (new) "Muted" list.
+Persist the "Muted" list for each chat.
+
+How to persist multiple windows in a single browser? The only real problem is that the list of chats may be different between the two, as will the memberid and name for each, if the two are in a single chat.
+
 Encrypted chats.
 
 Lock private chats so nobody else can join. Should look like the chat doesn't exist to anybody who tries to join. Specify valid usernames, and auto-lock when all have joined.
@@ -53,6 +61,7 @@ import Char
 import ChatClient.EncodeDecode
     exposing
         ( decodeChatKey
+        , decodeSavedModel
         , encodeChatKey
         , messageDecoder
         , messageEncoder
@@ -233,7 +242,8 @@ type PendingChat
 
 
 type alias Model =
-    { whichPage : WhichPage
+    { restoreState : RestoreState
+    , whichPage : WhichPage
     , proxyServer : Server
     , chats : Dict ( ServerUrl, GameId ) ChatInfo
     , publicChats : List PublicChat
@@ -316,7 +326,18 @@ initialProxyServer =
 
 init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> ( Model, Cmd Msg )
 init timeZoneOffset ports receiveItemPort =
-    { whichPage = MainPage
+    let
+        storage =
+            LocalStorage.make ports localStoragePrefix
+    in
+    { restoreState =
+        case receiveItemPort of
+            Just _ ->
+                RestoreStart
+
+            Nothing ->
+                RestoreDone
+    , whichPage = MainPage
     , proxyServer = initialProxyServer
     , chats = Dict.empty
     , publicChats = []
@@ -333,12 +354,18 @@ init timeZoneOffset ports receiveItemPort =
     , activityDict = Dict.empty
     , time = 0
     , timeZoneOffset = timeZoneOffset
-    , storage = LocalStorage.make ports localStoragePrefix
+    , storage = storage
     , receiveItemPort = receiveItemPort
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
           , Task.perform SetTime Time.now
+          , case receiveItemPort of
+                Nothing ->
+                    Cmd.none
+
+                Just _ ->
+                    LocalStorage.getItem storage localStorageModelKey
           ]
 
 
@@ -685,7 +712,7 @@ updateInternal msg model =
             receive interface message model
 
         ReceiveLocalStorage operation ports key value ->
-            model ! []
+            receiveLocalStorage operation key value model
 
 
 incrementActivityCount : ChatKey -> String -> Int -> Model -> Model
@@ -890,7 +917,6 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                             { info
                                 | otherMembers =
                                     memberName :: info.otherMembers
-                                , isPublic = isPublic
                             }
 
                         ( settings, cmd ) =
@@ -961,7 +987,6 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                                         { info
                                             | members =
                                                 ( id, memberName ) :: info.members
-                                            , isPublic = isPublic
                                         }
 
                                     mdl2 =
@@ -1921,6 +1946,11 @@ memberDecoder =
     stringPairDecoder "member (id, name)"
 
 
+decodeChat : Value -> Result String ChatInfo
+decodeChat value =
+    JD.decodeValue chatDecoder value
+
+
 chatDecoder : Decoder ChatInfo
 chatDecoder =
     decode ChatInfo
@@ -1932,3 +1962,171 @@ chatDecoder =
         |> hardcoded []
         |> required "isPublic" JD.bool
         |> required "settings" (ElmChat.settingsDecoder ChatUpdate)
+
+
+
+{- Restoring from saved state -}
+
+
+type RestoreState
+    = RestoreStart
+    | RestoreReadChats
+        { key : ChatKey
+        , keys : List ChatKey
+        , chats : List ChatInfo
+        , currentChat : ChatKey
+        }
+    | RestorePrivateChats
+        { waiting : ChatInfo
+        , private : List ChatInfo
+        , public : List ChatInfo
+        , currentChat : ChatKey
+        }
+    | RestorePublicChats
+        { waiting : ChatInfo
+        , public : List ChatInfo
+        , currentChat : ChatKey
+        }
+    | RestoreDone
+
+
+partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( RestoreState, Cmd Msg )
+partitionRestoredChats currentChat chats model =
+    let
+        private =
+            LE.filterNot .isPublic chats
+
+        public =
+            List.filter .isPublic chats
+    in
+    case private of
+        [] ->
+            case public of
+                [] ->
+                    ( RestoreDone, Cmd.none )
+
+                chat :: rest ->
+                    ( RestorePublicChats
+                        { waiting = chat
+                        , public = rest
+                        , currentChat = currentChat
+                        }
+                      -- TODO: join public chat (Will need a timeout)
+                    , Cmd.none
+                    )
+
+        chat :: rest ->
+            ( RestorePrivateChats
+                { waiting = chat
+                , private = rest
+                , public = public
+                , currentChat = currentChat
+                }
+              -- TODO: join private chat (Will need a timeout)
+            , Cmd.none
+            )
+
+
+cdr : List a -> List a
+cdr list =
+    case List.tail list of
+        Nothing ->
+            []
+
+        Just tail ->
+            tail
+
+
+receiveLocalStorage : LS.Operation -> LS.Key -> LS.Value -> Model -> ( Model, Cmd Msg )
+receiveLocalStorage operation key value model =
+    case operation of
+        LS.GetItemOperation ->
+            let
+                nextChat : ChatKey -> List ChatInfo -> List ChatKey -> ( RestoreState, Cmd Msg )
+                nextChat =
+                    \currentChat chats chatKeys ->
+                        case List.head chatKeys of
+                            Nothing ->
+                                partitionRestoredChats currentChat chats model
+
+                            Just key ->
+                                ( RestoreReadChats
+                                    { key = key
+                                    , keys = cdr chatKeys
+                                    , chats = chats
+                                    , currentChat = currentChat
+                                    }
+                                , LocalStorage.getItem
+                                    model.storage
+                                  <|
+                                    localStorageChatKey key
+                                )
+            in
+            case model.restoreState of
+                RestoreStart ->
+                    if value == JE.null then
+                        { model | restoreState = RestoreDone } ! []
+                    else
+                        case decodeSavedModel value of
+                            Err msg ->
+                                { model
+                                    | error =
+                                        Just <|
+                                            "Can't decode saved model:"
+                                                ++ msg
+                                }
+                                    ! []
+
+                            Ok mdl ->
+                                let
+                                    ( restoreState, cmd ) =
+                                        nextChat mdl.currentChat [] mdl.chatKeys
+                                in
+                                { model
+                                    | whichPage = mdl.whichPage
+                                    , memberName = mdl.memberName
+                                    , serverUrl = mdl.serverUrl
+                                    , isRemote = mdl.isRemote
+                                    , chatName = mdl.chatName
+                                    , chatid = mdl.chatid
+                                    , publicChatName = mdl.publicChatName
+                                    , hideHelp = mdl.hideHelp
+                                    , restoreState = RestoreDone
+                                }
+                                    ! [ cmd ]
+
+                RestoreReadChats { key, keys, chats, currentChat } ->
+                    let
+                        ( chats2, mdl ) =
+                            if value == JE.null then
+                                ( chats, model )
+                            else
+                                case decodeChat value of
+                                    Err _ ->
+                                        -- Should probably accumulate errors
+                                        ( chats, model )
+
+                                    Ok chat ->
+                                        ( chat :: chats
+                                        , { model
+                                            | chats = Dict.insert key chat model.chats
+                                          }
+                                        )
+
+                        ( restoreState, cmd ) =
+                            nextChat currentChat chats2 keys
+                    in
+                    { mdl | restoreState = restoreState }
+                        ! [ cmd
+
+                          -- Delete stored chat
+                          , LocalStorage.setItem mdl.storage
+                                (localStorageChatKey key)
+                                JE.null
+                          ]
+
+                _ ->
+                    model ! []
+
+        _ ->
+            model ! []

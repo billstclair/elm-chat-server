@@ -38,23 +38,14 @@ Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on 
 
 * Intro
 
-As part of my Elm version of two board games that my son invented,
-[[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and
-[[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication
-mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to
-generalize and share my technology.
+As part of my Elm version of two board games that my son invented, [[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and [[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to generalize and share my technology.
 
 Hence were born [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]] and
 [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][billstclair/elm-websocket-framework-server]]. 
 
-I built a very simple example, included with those packages, and a
-near-real-world, multi-user, multi-session, chat example, at
-[[https://xossbow.com/chat][xossbow.com/chat]]. I'll show you the chat example now, just so you can
-see how it works. Somebody go to that link, and I'll guide you through
-connecting with me.
+I built a very simple example, included with those packages, and a near-real-world, multi-user, multi-session, chat example, at [[https://xossbow.com/chat][xossbow.com/chat]]. I'll show you the chat example now, so you can see this technology's potential. Anybody who wants to, go to that link now, and I'll guide you through connecting with me.
 
-The chat app uses [[https://github.com/billstclair/elm-localstorage][billstclair/elm-localstorage]] for its
-persistence. There's a presentation I wrote for that [[https://github.com/billstclair/elm-localstorage-presentation/blob/master/presentation.org][here]].
+The chat app uses [[https://github.com/billstclair/elm-localstorage][billstclair/elm-localstorage]] for its persistence. There's a presentation I wrote for that [[https://github.com/billstclair/elm-localstorage-presentation/blob/master/presentation.org][here]]. You can see the persistence in the Chrome debugger's "Application" tab.
 
 * The wire protocol
 
@@ -72,6 +63,8 @@ persistence. There's a presentation I wrote for that [[https://github.com/billst
 
 * Questions
 
+Your turn to ask me about anything.
+
 * Extras
 
 A couple of illustrations of how Elm's strong typing makes massive
@@ -79,3 +72,10 @@ code changes easy to get right:
 
 1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm, eliminating duplicate records]]
 2. [[https://github.com/billstclair/elm-chat-server/commit/b87e443636941eeaa40b65813f5ce25dd2f0a609][Reorg keys from chatid to (serverUrl, chatid)]]
+
+* Local Variables
+
+# Local Variables:
+# fill-column: 50
+# eval: (progn (text-scale-set 4) (visual-line-mode))
+# End:
