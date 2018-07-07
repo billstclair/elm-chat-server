@@ -2060,16 +2060,6 @@ type RestoreState
     | RestoreDone
 
 
-joinChatCmd : ChatInfo -> Cmd Msg
-joinChatCmd chat =
-    case chat.members of
-        [] ->
-            Cmd.none
-
-        ( _, memberName ) :: _ ->
-            Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
-
-
 {-| Sprechen Sie Lisp?
 -}
 cdr : List a -> List a
@@ -2253,20 +2243,83 @@ startReconnectingChats currentChat chats model =
             reconnectToChat c mdl
 
 
+dot : String
+dot =
+    "."
+
+
+removeTrailingDots : String -> String
+removeTrailingDots string =
+    if String.endsWith dot string then
+        removeTrailingDots <| String.dropRight 1 string
+    else
+        string
+
+
+countTrailingDots : String -> Int
+countTrailingDots string =
+    String.length string - String.length (removeTrailingDots string)
+
+
+maxTrailingDots : Int
+maxTrailingDots =
+    3
+
+
+nextMemberName : String -> Maybe String
+nextMemberName memberName =
+    if countTrailingDots memberName < maxTrailingDots then
+        Just <| memberName ++ "."
+    else
+        Nothing
+
+
+joinChatCmd : ChatInfo -> MemberName -> Cmd Msg
+joinChatCmd chat memberName =
+    Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
+
+
 continueRestoreAfterErrorRsp : ErrorKind -> String -> Model -> ( Model, Cmd Msg )
 continueRestoreAfterErrorRsp errorKind errmsg model =
     case model.restoreState of
         RestoreReconnectChats record ->
+            let
+                { waiting, chats } =
+                    record
+            in
             case errorKind of
                 UnknownMemberidError _ ->
-                    model ! [ joinChatCmd record.waiting ]
+                    case waiting.members of
+                        [] ->
+                            continueRestoreAfterErrorRsp
+                                (UnknownChatidError
+                                    { chatid = waiting.chatid }
+                                )
+                                "No members"
+                                model
+
+                        ( _, memberName ) :: _ ->
+                            model
+                                ! [ joinChatCmd waiting <|
+                                        removeTrailingDots memberName
+                                  ]
 
                 MemberExistsError { memberName } ->
-                    -- TODO
-                    model ! []
+                    case nextMemberName memberName of
+                        Nothing ->
+                            continueRestoreAfterErrorRsp
+                                (UnknownChatidError
+                                    { chatid = waiting.chatid }
+                                )
+                                "Out of trailing dots"
+                                model
+
+                        Just name ->
+                            model
+                                ! [ joinChatCmd waiting name ]
 
                 _ ->
-                    case record.chats of
+                    case chats of
                         [] ->
                             { model | restoreState = RestoreDone } ! []
 
@@ -2285,7 +2338,11 @@ continueRestoreAfterErrorRsp errorKind errmsg model =
                             reconnectToChat chat mdl
 
         _ ->
-            { model | error = Just errmsg } ! []
+            { model
+                | restoreState = RestoreDone
+                , error = Just errmsg
+            }
+                ! []
 
 
 continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
