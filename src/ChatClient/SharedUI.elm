@@ -857,7 +857,7 @@ receive interface message model =
                         ! []
 
                 _ ->
-                    continueRestoreAfterErrorRsp error.kind model
+                    continueRestoreAfterErrorRsp error.kind error.message model
 
         _ ->
             { mdl
@@ -2052,15 +2052,9 @@ type RestoreState
         , chats : List ChatInfo
         , currentChat : ChatKey
         }
-    | RestorePrivateChats
+    | RestoreReconnectChats
         { waiting : ChatInfo
-        , private : List ChatInfo
-        , public : List ChatInfo
-        , currentChat : ChatKey
-        }
-    | RestorePublicChats
-        { waiting : ChatInfo
-        , public : List ChatInfo
+        , chats : List ChatInfo
         , currentChat : ChatKey
         }
     | RestoreDone
@@ -2074,101 +2068,6 @@ joinChatCmd chat =
 
         ( _, memberName ) :: _ ->
             Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
-
-
-{-| This needs to register the server so the subscription will happen.
-
-That means it must return (Model, Cmd Msg).
-
-TODO
-
--}
-reconnectToChat : ChatInfo -> Model -> ( Model, Cmd Msg )
-reconnectToChat chat model =
-    let
-        ( server, mdl ) =
-            case chat.server of
-                Nothing ->
-                    ( model.proxyServer, model )
-
-                Just s ->
-                    case Dict.get (serverUrl s) model.connectedServers of
-                        Nothing ->
-                            ( s
-                            , { model
-                                | connectedServers =
-                                    Dict.insert (serverUrl s)
-                                        s
-                                        model.connectedServers
-                              }
-                            )
-
-                        Just s2 ->
-                            ( s2, model )
-    in
-    ( mdl
-    , send server model <|
-        -- Try first to reactivate existing memberid
-        SendReq
-            { memberid =
-                case chat.members of
-                    [] ->
-                        -- won't happen, but will error, so all OK.
-                        ""
-
-                    ( memberid, _ ) :: _ ->
-                        log "Attempting to reconnect memberid"
-                            memberid
-            , message = ""
-            }
-    )
-
-
-partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( Model, Cmd Msg )
-partitionRestoredChats currentChat chats model =
-    let
-        private =
-            LE.filterNot .isPublic chats
-
-        public =
-            List.filter .isPublic chats
-    in
-    let
-        ( restoreState, chat ) =
-            case private of
-                [] ->
-                    case public of
-                        [] ->
-                            ( RestoreDone, Nothing )
-
-                        chat :: rest ->
-                            ( RestorePublicChats
-                                { waiting = chat
-                                , public = rest
-                                , currentChat = currentChat
-                                }
-                            , Just chat
-                            )
-
-                chat :: rest ->
-                    ( RestorePrivateChats
-                        { waiting = chat
-                        , private = rest
-                        , public = public
-                        , currentChat = currentChat
-                        }
-                    , Just chat
-                    )
-
-        mdl =
-            { model | restoreState = restoreState }
-    in
-    case chat of
-        Nothing ->
-            ( mdl, Cmd.none )
-
-        Just c ->
-            reconnectToChat c mdl
 
 
 {-| Sprechen Sie Lisp?
@@ -2197,7 +2096,7 @@ receiveLocalStorage operation key value model =
                     \currentChat chats chatKeys ->
                         case List.head chatKeys of
                             Nothing ->
-                                partitionRestoredChats currentChat chats model
+                                startReconnectingChats currentChat chats model
 
                             Just key ->
                                 ( { model
@@ -2285,8 +2184,112 @@ receiveLocalStorage operation key value model =
             model ! []
 
 
-continueRestoreAfterErrorRsp : ErrorKind -> Model -> ( Model, Cmd Msg )
-continueRestoreAfterErrorRsp kind model =
+reconnectToChat : ChatInfo -> Model -> ( Model, Cmd Msg )
+reconnectToChat chat model =
+    let
+        ( server, mdl ) =
+            case chat.server of
+                Nothing ->
+                    ( model.proxyServer, model )
+
+                Just s ->
+                    case Dict.get (serverUrl s) model.connectedServers of
+                        Nothing ->
+                            ( s
+                            , { model
+                                | connectedServers =
+                                    Dict.insert (serverUrl s)
+                                        s
+                                        model.connectedServers
+                              }
+                            )
+
+                        Just s2 ->
+                            ( s2, model )
+    in
+    ( mdl
+    , send server model <|
+        -- Try first to reactivate existing memberid
+        SendReq
+            { memberid =
+                case chat.members of
+                    [] ->
+                        -- won't happen, but will error, so all OK.
+                        ""
+
+                    ( memberid, _ ) :: _ ->
+                        log "Attempting to reconnect memberid"
+                            memberid
+            , message = ""
+            }
+    )
+
+
+startReconnectingChats : ChatKey -> List ChatInfo -> Model -> ( Model, Cmd Msg )
+startReconnectingChats currentChat chats model =
+    let
+        ( restoreState, chat ) =
+            case chats of
+                [] ->
+                    ( RestoreDone, Nothing )
+
+                chat :: rest ->
+                    ( RestoreReconnectChats
+                        { waiting = chat
+                        , chats = rest
+                        , currentChat = currentChat
+                        }
+                    , Just chat
+                    )
+
+        mdl =
+            { model | restoreState = restoreState }
+    in
+    case chat of
+        Nothing ->
+            ( mdl, Cmd.none )
+
+        Just c ->
+            reconnectToChat c mdl
+
+
+continueRestoreAfterErrorRsp : ErrorKind -> String -> Model -> ( Model, Cmd Msg )
+continueRestoreAfterErrorRsp errorKind errmsg model =
+    case model.restoreState of
+        RestoreReconnectChats record ->
+            case errorKind of
+                UnknownMemberidError _ ->
+                    model ! [ joinChatCmd record.waiting ]
+
+                MemberExistsError { memberName } ->
+                    -- TODO
+                    model ! []
+
+                _ ->
+                    case record.chats of
+                        [] ->
+                            { model | restoreState = RestoreDone } ! []
+
+                        chat :: rest ->
+                            let
+                                mdl =
+                                    { model
+                                        | restoreState =
+                                            RestoreReconnectChats
+                                                { record
+                                                    | waiting = chat
+                                                    , chats = rest
+                                                }
+                                    }
+                            in
+                            reconnectToChat chat mdl
+
+        _ ->
+            { model | error = Just errmsg } ! []
+
+
+continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
+continueRestoreAfterReceiveRsp model =
     -- TODO
     model ! []
 
@@ -2295,18 +2298,8 @@ continueRestoreAfterJoinRsp : Model -> ( Model, Cmd Msg )
 continueRestoreAfterJoinRsp model =
     case model.restoreState of
         -- TODO
-        RestorePrivateChats { waiting } ->
-            model ! []
-
-        -- TODO
-        RestorePublicChats { waiting } ->
+        RestoreReconnectChats { waiting } ->
             model ! []
 
         _ ->
             model ! []
-
-
-continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
-continueRestoreAfterReceiveRsp model =
-    -- TODO
-    model ! []
