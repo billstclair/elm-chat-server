@@ -367,7 +367,8 @@ init timeZoneOffset ports receiveItemPort =
                     Cmd.none
 
                 Just _ ->
-                    LocalStorage.getItem storage localStorageModelKey
+                    LocalStorage.getItem storage
+                        (log "restoring model" localStorageModelKey)
           ]
 
 
@@ -895,7 +896,7 @@ receiveRsp chatid memberName message server model =
                 ( mdl2, cmd2 ) =
                     continueRestoreAfterReceive mdl
             in
-            mdl2 ! ( cmd, cmd2 )
+            mdl2 ! [ cmd, cmd2 ]
 
 
 receiveRspDelayed : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
@@ -2086,6 +2087,28 @@ joinChatCmd chat =
             Task.perform (JoinChatKey <| chatKey chat) (Task.succeed memberName)
 
 
+reconnectToChat : ChatInfo -> Model -> Cmd Msg
+reconnectToChat chat model =
+    let
+        server =
+            chatServer chat model
+    in
+    send server model <|
+        -- Try first to reactivate existing memberid
+        SendReq
+            { memberid =
+                case chat.members of
+                    [] ->
+                        -- won't happen, but will error, so all OK.
+                        ""
+
+                    ( memberid, _ ) :: _ ->
+                        log "Attempting to reconnect memberid"
+                            memberid
+            , message = ""
+            }
+
+
 partitionRestoredChats : ChatKey -> List ChatInfo -> Model -> ( RestoreState, Cmd Msg )
 partitionRestoredChats currentChat chats model =
     let
@@ -2102,28 +2125,12 @@ partitionRestoredChats currentChat chats model =
                     ( RestoreDone, Cmd.none )
 
                 chat :: rest ->
-                    let
-                        server =
-                            chatServer chat model
-                    in
                     ( RestorePublicChats
                         { waiting = chat
                         , public = rest
                         , currentChat = currentChat
                         }
-                    , send server model <|
-                        -- Try first to reactive existing memberid
-                        SendReq
-                            { memberid =
-                                case chat.members of
-                                    [] ->
-                                        -- won't happen, but will error, so all OK.
-                                        ""
-
-                                    ( memberid, _ ) :: _ ->
-                                        memberid
-                            , message = ""
-                            }
+                    , reconnectToChat chat model
                     )
 
         chat :: rest ->
@@ -2133,7 +2140,7 @@ partitionRestoredChats currentChat chats model =
                 , public = public
                 , currentChat = currentChat
                 }
-            , joinChatCmd chat
+            , reconnectToChat chat model
             )
 
 
@@ -2173,7 +2180,8 @@ receiveLocalStorage operation key value model =
                                 , LocalStorage.getItem
                                     model.storage
                                   <|
-                                    localStorageChatKey key
+                                    log "Restoring chat" <|
+                                        localStorageChatKey key
                                 )
             in
             case model.restoreState of
@@ -2205,7 +2213,7 @@ receiveLocalStorage operation key value model =
                                     , chatid = mdl.chatid
                                     , publicChatName = mdl.publicChatName
                                     , hideHelp = mdl.hideHelp
-                                    , restoreState = RestoreDone
+                                    , restoreState = restoreState
                                 }
                                     ! [ cmd ]
 
@@ -2247,7 +2255,7 @@ receiveLocalStorage operation key value model =
 
 
 continueRestoreAfterReceiveError : ErrorKind -> Model -> ( Model, Cmd Msg )
-continueRestoreAfterReceiveError message model =
+continueRestoreAfterReceiveError kind model =
     -- TODO
     model ! []
 
