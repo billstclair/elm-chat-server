@@ -115,6 +115,12 @@ type Message
         { chatid : GameId
         , memberName : MemberName
         }
+    | RejoinChatReq
+        { memberid : PlayerId
+        , chatid : GameId
+        , memberName : MemberName
+        , isPublic : Bool
+        }
     | JoinChatRsp
         { chatid : GameId
         , memberid : Maybe PlayerId

@@ -74,6 +74,15 @@ messageEncoder message =
               ]
             )
 
+        RejoinChatReq { memberid, chatid, memberName, isPublic } ->
+            ( Req "rejoin"
+            , [ ( "memberid", JE.string memberid )
+              , ( "chatid", JE.string chatid )
+              , ( "memberName", JE.string memberName )
+              , ( "isPublic", JE.bool isPublic )
+              ]
+            )
+
         JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
             ( Rsp "join"
             , [ ( "chatid", JE.string chatid )
@@ -212,6 +221,7 @@ reqPlist =
     , ( "new", newChatReqDecoder )
     , ( "newPublic", newPublicChatReqDecoder )
     , ( "join", joinChatReqDecoder )
+    , ( "rejoin", rejoinChatReqDecoder )
     , ( "send", sendReqDecoder )
     , ( "leave", leaveChatReqDecoder )
     , ( "getPublicChats", getPublicChatsReqDecoder )
@@ -265,6 +275,23 @@ joinChatReqDecoder =
         )
         (JD.field "chatid" JD.string)
         (JD.field "memberName" JD.string)
+
+
+rejoinChatReqDecoder : Decoder Message
+rejoinChatReqDecoder =
+    JD.map4
+        (\memberid chatid memberName isPublic ->
+            RejoinChatReq
+                { memberid = memberid
+                , chatid = chatid
+                , memberName = memberName
+                , isPublic = isPublic
+                }
+        )
+        (JD.field "memberid" JD.string)
+        (JD.field "chatid" JD.string)
+        (JD.field "memberName" JD.string)
+        (JD.field "isPublic" JD.bool)
 
 
 sendReqDecoder : Decoder Message

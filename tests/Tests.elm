@@ -107,6 +107,12 @@ protocolData =
         { chatid = "Anarchy"
         , memberName = "John"
         }
+    , RejoinChatReq
+        { memberid = "123skidoo"
+        , chatid = "Anarchy"
+        , memberName = "John"
+        , isPublic = True
+        }
     , JoinChatRsp
         { chatid = "Anarchy"
         , memberid = Just "123skidoo"

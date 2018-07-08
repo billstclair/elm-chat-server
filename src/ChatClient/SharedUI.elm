@@ -20,8 +20,6 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-When restoring sessions, the chat text area gets shorter. Bug in billstclair/elm-chat?
-
 Need a new message to turn a memberid into otherMembers, chatid, and memberName. otherMembers is the only thing we can't compute on the client side, but might as well send the other info as well. Call this at restore time.
 
 It's bit confusing to have two separate windows in a single browser. They share the persistence, so can't be really separate. It would be lovely to be able to detect that and do something reasonable, like maybe the second session isn't persistent.

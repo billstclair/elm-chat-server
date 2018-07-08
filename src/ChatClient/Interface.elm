@@ -94,73 +94,16 @@ messageProcessor state message =
             ( state, Just <| PongRsp { message = message } )
 
         NewChatReq { memberName } ->
-            newChatReq state memberName
+            newChatReq state memberName Nothing
 
         NewPublicChatReq { memberName, chatName } ->
             newPublicChatReq state memberName chatName
 
         JoinChatReq { chatid, memberName } ->
-            case getGame chatid state of
-                Nothing ->
-                    ( state
-                    , Just <|
-                        ErrorRsp
-                            { kind = UnknownChatidError { chatid = chatid }
-                            , message = "No such chatid."
-                            }
-                    )
+            joinChatReq state chatid memberName
 
-                Just gamestate ->
-                    if
-                        Nothing
-                            /= LE.find (Tuple.second >> (==) memberName)
-                                gamestate.members
-                    then
-                        ( state
-                        , Just <|
-                            ErrorRsp
-                                { kind =
-                                    MemberExistsError
-                                        { chatid = chatid
-                                        , memberName = memberName
-                                        }
-                                , message =
-                                    "There is already a member with that name in this chat."
-                                }
-                        )
-                    else
-                        let
-                            ( memberid, state2 ) =
-                                ServerInterface.newPlayerid state
-
-                            state3 =
-                                updateGame chatid
-                                    (Just
-                                        { gamestate
-                                            | members =
-                                                ( memberid, memberName )
-                                                    :: gamestate.members
-                                        }
-                                    )
-                                    state2
-
-                            info =
-                                { gameid = chatid
-                                , player = memberName
-                                }
-                        in
-                        ( ServerInterface.addPlayer memberid info state3
-                        , Just <|
-                            JoinChatRsp
-                                { chatid = chatid
-                                , memberid = Just memberid
-                                , memberName = memberName
-                                , otherMembers =
-                                    List.map Tuple.second
-                                        gamestate.members
-                                , isPublic = Nothing /= getPublicGame chatid state
-                                }
-                        )
+        RejoinChatReq { memberid, chatid, memberName, isPublic } ->
+            rejoinChatReq state memberid chatid memberName isPublic
 
         SendReq { memberid, message } ->
             ( state
@@ -210,7 +153,7 @@ messageProcessor state message =
                         Just gamestate ->
                             let
                                 members =
-                                    List.filter (Tuple.first >> (/=) memberid)
+                                    List.filter (\( id, _ ) -> id /= memberid)
                                         gamestate.members
 
                                 state2 =
@@ -266,6 +209,192 @@ messageProcessor state message =
                     , message = "Unknown request"
                     }
             )
+
+
+joinChatReq : ServerState -> GameId -> MemberName -> ( ServerState, Maybe Message )
+joinChatReq state chatid memberName =
+    case getGame chatid state of
+        Nothing ->
+            ( state
+            , Just <|
+                ErrorRsp
+                    { kind = UnknownChatidError { chatid = chatid }
+                    , message = "No such chatid."
+                    }
+            )
+
+        Just gamestate ->
+            if
+                Nothing
+                    /= LE.find (Tuple.second >> (==) memberName)
+                        gamestate.members
+            then
+                ( state
+                , Just <|
+                    ErrorRsp
+                        { kind =
+                            MemberExistsError
+                                { chatid = chatid
+                                , memberName = memberName
+                                }
+                        , message =
+                            "There is already a member with that name in this chat."
+                        }
+                )
+            else
+                let
+                    ( memberid, state2 ) =
+                        ServerInterface.newPlayerid state
+
+                    state3 =
+                        updateGame chatid
+                            (Just
+                                { gamestate
+                                    | members =
+                                        ( memberid, memberName )
+                                            :: gamestate.members
+                                }
+                            )
+                            state2
+
+                    info =
+                        { gameid = chatid
+                        , player = memberName
+                        }
+                in
+                ( ServerInterface.addPlayer memberid info state3
+                , Just <|
+                    JoinChatRsp
+                        { chatid = chatid
+                        , memberid = Just memberid
+                        , memberName = memberName
+                        , otherMembers =
+                            List.map Tuple.second
+                                gamestate.members
+                        , isPublic = Nothing /= getPublicGame chatid state
+                        }
+                )
+
+
+dot : String
+dot =
+    "."
+
+
+removeTrailingDots : String -> String
+removeTrailingDots string =
+    if String.endsWith dot string then
+        removeTrailingDots <| String.dropRight 1 string
+    else
+        string
+
+
+countTrailingDots : String -> Int
+countTrailingDots string =
+    String.length string - String.length (removeTrailingDots string)
+
+
+maxTrailingDots : Int
+maxTrailingDots =
+    3
+
+
+nextMemberName : String -> Maybe String
+nextMemberName memberName =
+    if countTrailingDots memberName < maxTrailingDots then
+        Just <| memberName ++ "."
+    else
+        Nothing
+
+
+rejoinChatReq : ServerState -> PlayerId -> GameId -> MemberName -> Bool -> ( ServerState, Maybe Message )
+rejoinChatReq state memberid chatid memberName isPublic =
+    case Dict.get memberid state.playerDict of
+        Nothing ->
+            rejoinChatReqInternal state
+                chatid
+                (removeTrailingDots memberName)
+                isPublic
+
+        Just { gameid } ->
+            case Dict.get gameid state.gameDict of
+                Nothing ->
+                    ( state
+                    , Just <|
+                        ErrorRsp
+                            { kind = UnknownMemberidError { memberid = memberid }
+                            , message = "This shouldn't happen."
+                            }
+                    )
+
+                Just gamestate ->
+                    let
+                        members =
+                            List.filter (\( id, _ ) -> id /= memberid)
+                                gamestate.members
+                    in
+                    ( state
+                    , Just <|
+                        JoinChatRsp
+                            { chatid = chatid
+                            , memberid = Just memberid
+                            , memberName = memberName
+                            , otherMembers = List.map Tuple.second members
+                            , isPublic = Nothing /= getPublicGame chatid state
+                            }
+                    )
+
+
+rejoinChatReqInternal : ServerState -> GameId -> MemberName -> Bool -> ( ServerState, Maybe Message )
+rejoinChatReqInternal state chatid memberName isPublic =
+    let
+        ( state2, msg ) =
+            joinChatReq state chatid memberName
+    in
+    case msg of
+        Just (ErrorRsp { kind }) ->
+            case kind of
+                MemberExistsError _ ->
+                    case nextMemberName memberName of
+                        Nothing ->
+                            rejoinCreateNew state
+                                chatid
+                                (removeTrailingDots memberName)
+                                isPublic
+
+                        Just name ->
+                            rejoinChatReqInternal state
+                                chatid
+                                name
+                                isPublic
+
+                _ ->
+                    rejoinCreateNew state
+                        chatid
+                        (removeTrailingDots memberName)
+                        isPublic
+
+        _ ->
+            ( state2, msg )
+
+
+rejoinCreateNew : ServerState -> GameId -> MemberName -> Bool -> ( ServerState, Maybe Message )
+rejoinCreateNew state chatid memberName isPublic =
+    if isPublic then
+        newPublicChatReq state memberName chatid
+    else
+        case Dict.get chatid state.gameDict of
+            Nothing ->
+                newChatReq state memberName <| Just chatid
+
+            _ ->
+                ( state
+                , Just <|
+                    ErrorRsp
+                        { kind = UnknownChatidError { chatid = chatid }
+                        , message = "This can't happen"
+                        }
+                )
 
 
 gameMemberCount : ServerState -> GameId -> Int
@@ -359,8 +488,8 @@ newPublicChatReqInternal state memberName chatName =
     )
 
 
-newChatReq : ServerState -> MemberName -> ( ServerState, Maybe Message )
-newChatReq state memberName =
+newChatReq : ServerState -> MemberName -> Maybe GameId -> ( ServerState, Maybe Message )
+newChatReq state memberName gameid =
     if gameCount state >= settings.maxChats then
         ( state
         , Just <|
@@ -373,14 +502,20 @@ newChatReq state memberName =
                 }
         )
     else
-        newChatReqInternal state memberName
+        newChatReqInternal state memberName gameid
 
 
-newChatReqInternal : ServerState -> MemberName -> ( ServerState, Maybe Message )
-newChatReqInternal state memberName =
+newChatReqInternal : ServerState -> MemberName -> Maybe GameId -> ( ServerState, Maybe Message )
+newChatReqInternal state memberName gameid =
     let
         ( chatid, state2 ) =
-            ServerInterface.newGameid state
+            case gameid of
+                -- We trust our caller, rejoinCreateNew
+                Just id ->
+                    ( id, state )
+
+                Nothing ->
+                    ServerInterface.newGameid state
 
         ( memberid, state3 ) =
             ServerInterface.newPlayerid state2
