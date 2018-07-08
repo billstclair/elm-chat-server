@@ -290,6 +290,7 @@ type Msg
     | NewChat
     | JoinChat
     | LeaveChat PlayerId
+    | ClearChat
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
     | RefreshPublicChats
@@ -303,7 +304,13 @@ emptySettings =
     let
         settings =
             ElmChat.makeSettings "id1" 14 True ChatUpdate
+    in
+    restoreChatSettingsHeight settings
 
+
+restoreChatSettingsHeight : ElmChat.Settings Msg -> ElmChat.Settings Msg
+restoreChatSettingsHeight settings =
+    let
         attributes =
             settings.attributes
     in
@@ -627,6 +634,26 @@ updateInternal msg model =
                                     { memberid = memberid }
                           ]
 
+        ClearChat ->
+            case Dict.get model.currentChat model.chats of
+                Nothing ->
+                    model ! []
+
+                Just info ->
+                    let
+                        chat =
+                            { info
+                                | settings = emptySettings
+                            }
+                    in
+                    { model
+                        | chats =
+                            Dict.insert model.currentChat
+                                chat
+                                model.chats
+                    }
+                        ! [ saveChat chat model ]
+
         JoinPublicChat maybeChatName ->
             let
                 chatName =
@@ -683,13 +710,19 @@ updateInternal msg model =
                     model ! []
 
                 Just chat ->
+                    let
+                        chat2 =
+                            { chat | settings = settings }
+                    in
                     { model
                         | chats =
                             Dict.insert model.currentChat
-                                { chat | settings = settings }
+                                chat2
                                 model.chats
                     }
-                        ! [ cmd ]
+                        ! [ cmd
+                          , saveChat chat2 model
+                          ]
 
         ChatSend memberid line settings ->
             case Dict.get model.currentChat model.chats of
@@ -1611,6 +1644,10 @@ currentChatRows model =
                                 ]
                                 []
                             ]
+                        , td
+                            [ button [ onClick ClearChat ]
+                                [ text "Clear Transcript" ]
+                            ]
                         ]
                   , case info.otherMembers of
                         [] ->
@@ -2030,7 +2067,10 @@ chatDecoder =
         -- otherMembers
         |> hardcoded []
         |> required "isPublic" JD.bool
-        |> required "settings" (ElmChat.settingsDecoder ChatUpdate)
+        |> required "settings"
+            (JD.map restoreChatSettingsHeight <|
+                ElmChat.settingsDecoder ChatUpdate
+            )
 
 
 
