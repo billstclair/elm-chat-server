@@ -20,7 +20,11 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Persistence. Retry joining private chats and creation of public chats. See if old memberid just works first. Make sure the deathwatch is reprieved when you refresh.
+When restoring sessions, the chat text area gets shorter. Bug in billstclair/elm-chat?
+
+Need a new message to turn a memberid into otherMembers, chatid, and memberName. otherMembers is the only thing we can't compute on the client side, but might as well send the other info as well. Call this at restore time.
+
+It's bit confusing to have two separate windows in a single browser. They share the persistence, so can't be really separate. It would be lovely to be able to detect that and do something reasonable, like maybe the second session isn't persistent.
 
 "Clear" button by the chat "ID" to clear the chat output.
 
@@ -2276,7 +2280,15 @@ joinAChat chat memberName model =
         { model
             | memberName = memberName
             , chatName = chat.chatName
-            , chatid = chat.chatid
+            , chatid =
+                log
+                    ("joinAChat, memberName: "
+                        ++ memberName
+                        ++ ", chatName: "
+                        ++ chat.chatName
+                        ++ "chatid"
+                    )
+                    chat.chatid
         }
         ! [ Task.perform (\() -> JoinChat) <| Task.succeed () ]
 
@@ -2286,7 +2298,10 @@ makeAPublicChat chat memberName model =
     populateServer chat
         { model
             | memberName = memberName
-            , publicChatName = chat.chatid
+            , publicChatName =
+                log
+                    ("makeAPublicChat, memberName: " ++ memberName ++ "chatid")
+                    chat.chatid
         }
         ! [ Task.perform (\() -> NewPublicChat) <| Task.succeed () ]
 
@@ -2367,10 +2382,10 @@ continueRestoreAfterReceiveRsp model =
     case model.restoreState of
         RestoreReconnectChats { savedModel, waiting, chats } ->
             let
-                mdl =
+                ( mdl, cmd ) =
                     case List.head waiting.members of
                         Nothing ->
-                            model
+                            model ! []
 
                         Just pair ->
                             let
@@ -2388,8 +2403,12 @@ continueRestoreAfterReceiveRsp model =
                                 | chats =
                                     Dict.insert chatkey chat model.chats
                             }
+                                ! [ saveChat chat model ]
+
+                ( mdl2, cmd2 ) =
+                    startReconnectingChats savedModel chats mdl
             in
-            startReconnectingChats savedModel chats mdl
+            mdl2 ! [ cmd, cmd2 ]
 
         _ ->
             { model | restoreState = RestoreDone } ! []
@@ -2408,6 +2427,9 @@ continueRestoreAfterJoinRsp model =
                 chatkey =
                     chatKey waiting
 
+                chat =
+                    { waiting | settings = waiting.settings }
+
                 mdl =
                     case Dict.get chatkey model.chats of
                         Nothing ->
@@ -2416,12 +2438,16 @@ continueRestoreAfterJoinRsp model =
                         Just chat ->
                             { model
                                 | chats =
-                                    Dict.insert chatkey
-                                        { chat | settings = waiting.settings }
-                                        model.chats
+                                    Dict.insert chatkey chat model.chats
                             }
+
+                ( mdl2, cmd ) =
+                    startReconnectingChats savedModel chats mdl
             in
-            startReconnectingChats savedModel chats mdl
+            mdl2
+                ! [ cmd
+                  , saveChat chat mdl2
+                  ]
 
         _ ->
             model
