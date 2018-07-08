@@ -21,6 +21,7 @@ module ChatClient.Types
         , Player
         , PublicChat
         , PublicChatName
+        , RejoinMethod(..)
         , SavedModel
         , WhichPage(..)
         )
@@ -103,6 +104,12 @@ type ErrorKind
     | UnknownRequestError { request : String }
 
 
+type RejoinMethod
+    = RejoinNeverLeft
+    | RejoinExisting
+    | RejoinNew
+
+
 type Message
     = PingReq { message : String }
     | PongRsp { message : String }
@@ -127,6 +134,7 @@ type Message
         , memberName : MemberName
         , otherMembers : MemberNames
         , isPublic : Bool
+        , rejoinMethod : Maybe RejoinMethod
         }
     | SendReq
         { memberid : PlayerId

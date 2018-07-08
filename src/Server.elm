@@ -34,6 +34,7 @@ import ChatClient.Types
         , GameState
         , Message(..)
         , Player
+        , RejoinMethod(..)
         )
 import Debug exposing (log)
 import List.Extra as LE
@@ -132,9 +133,11 @@ messageSender model socket state request response =
                             response
                   ]
 
+        -- Need to special case RejoinChatReq here
+        -- Don't send the response to anybody else.
         JoinChatRsp joinrsp ->
             let
-                { chatid, memberid, memberName } =
+                { chatid, memberid, memberName, rejoinMethod } =
                     joinrsp
             in
             case memberid of
@@ -158,15 +161,20 @@ messageSender model socket state request response =
                                 response
                                 outputPort
                                 socket
-                          , sendToOthers chatid
-                                socket
-                                model
-                                messageEncoder
-                            <|
-                                JoinChatRsp
-                                    { joinrsp
-                                        | memberid = Nothing
-                                    }
+                          , case rejoinMethod of
+                                Just RejoinNeverLeft ->
+                                    Cmd.none
+
+                                _ ->
+                                    sendToOthers chatid
+                                        socket
+                                        model
+                                        messageEncoder
+                                    <|
+                                        JoinChatRsp
+                                            { joinrsp
+                                                | memberid = Nothing
+                                            }
                           ]
 
         LeaveChatRsp { chatid } ->

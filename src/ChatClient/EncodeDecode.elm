@@ -19,6 +19,7 @@ import ChatClient.Types
         , MemberName
         , Message(..)
         , PublicChat
+        , RejoinMethod(..)
         , SavedModel
         , WhichPage(..)
         )
@@ -83,23 +84,31 @@ messageEncoder message =
               ]
             )
 
-        JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic } ->
+        JoinChatRsp { chatid, memberid, memberName, otherMembers, isPublic, rejoinMethod } ->
             ( Rsp "join"
-            , [ ( "chatid", JE.string chatid )
-              , ( "memberid"
-                , case memberid of
-                    Nothing ->
-                        JE.null
+            , List.concat
+                [ [ ( "chatid", JE.string chatid )
+                  , ( "memberid"
+                    , case memberid of
+                        Nothing ->
+                            JE.null
 
-                    Just id ->
-                        JE.string id
-                )
-              , ( "memberName", JE.string memberName )
-              , ( "otherMembers"
-                , JE.list <| List.map JE.string otherMembers
-                )
-              , ( "isPublic", JE.bool isPublic )
-              ]
+                        Just id ->
+                            JE.string id
+                    )
+                  , ( "memberName", JE.string memberName )
+                  , ( "otherMembers"
+                    , JE.list <| List.map JE.string otherMembers
+                    )
+                  , ( "isPublic", JE.bool isPublic )
+                  ]
+                , case rejoinMethod of
+                    Nothing ->
+                        []
+
+                    Just method ->
+                        [ ( "rejoinMethod", encodeRejoinMethod method ) ]
+                ]
             )
 
         SendReq { memberid, message } ->
@@ -145,6 +154,19 @@ messageEncoder message =
               , ( "message", JE.string message )
               ]
             )
+
+
+encodeRejoinMethod : RejoinMethod -> Value
+encodeRejoinMethod method =
+    case method of
+        RejoinNeverLeft ->
+            JE.string "RejoinNeverLeft"
+
+        RejoinExisting ->
+            JE.string "RejoinExisting"
+
+        RejoinNew ->
+            JE.string "RejoinNew"
 
 
 encodeErrorKind : ErrorKind -> Value
@@ -322,14 +344,15 @@ pongRspDecoder =
 
 joinChatRspDecoder : Decoder Message
 joinChatRspDecoder =
-    JD.map5
-        (\chatid memberid memberName otherMembers isPublic ->
+    JD.map6
+        (\chatid memberid memberName otherMembers isPublic rejoinMethod ->
             JoinChatRsp
                 { chatid = chatid
                 , memberid = memberid
                 , memberName = memberName
                 , otherMembers = otherMembers
                 , isPublic = isPublic
+                , rejoinMethod = rejoinMethod
                 }
         )
         (JD.field "chatid" JD.string)
@@ -337,6 +360,34 @@ joinChatRspDecoder =
         (JD.field "memberName" JD.string)
         (JD.field "otherMembers" <| JD.list JD.string)
         (JD.field "isPublic" JD.bool)
+        (JD.oneOf
+            -- This isn't quite right. A misspelled RejoinMethod
+            -- will result in Nothing instead of an error.
+            -- Let them report it as a bug.
+            [ JD.map Just <| JD.field "rejoinMethod" rejoinMethodDecoder
+            , JD.succeed Nothing
+            ]
+        )
+
+
+rejoinMethodDecoder : Decoder RejoinMethod
+rejoinMethodDecoder =
+    JD.string
+        |> JD.andThen
+            (\s ->
+                case s of
+                    "RejoinNeverLeft" ->
+                        JD.succeed RejoinNeverLeft
+
+                    "RejoinExisting" ->
+                        JD.succeed RejoinExisting
+
+                    "RejoinNew" ->
+                        JD.succeed RejoinNew
+
+                    _ ->
+                        JD.fail "Invalid RejoinMethod"
+            )
 
 
 receiveRspDecoder : Decoder Message

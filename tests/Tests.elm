@@ -5,6 +5,7 @@ import ChatClient.Types as Types
     exposing
         ( ErrorKind(..)
         , Message(..)
+        , RejoinMethod(..)
         )
 import Dict
 import Expect exposing (Expectation)
@@ -119,6 +120,7 @@ protocolData =
         , memberName = "John"
         , otherMembers = [ "Bill" ]
         , isPublic = True
+        , rejoinMethod = Nothing
         }
     , JoinChatRsp
         { chatid = "Anarchy"
@@ -126,6 +128,23 @@ protocolData =
         , memberName = "Lysander"
         , otherMembers = []
         , isPublic = True
+        , rejoinMethod = Just RejoinNeverLeft
+        }
+    , JoinChatRsp
+        { chatid = "Anarchy"
+        , memberid = Nothing
+        , memberName = "Lysander"
+        , otherMembers = []
+        , isPublic = True
+        , rejoinMethod = Just RejoinExisting
+        }
+    , JoinChatRsp
+        { chatid = "Anarchy"
+        , memberid = Nothing
+        , memberName = "Lysander"
+        , otherMembers = []
+        , isPublic = True
+        , rejoinMethod = Just RejoinNew
         }
     , SendReq
         { memberid = "123skidoo"

@@ -28,6 +28,7 @@ import ChatClient.Types
         , Message(..)
         , Player
         , PublicChatName
+        , RejoinMethod(..)
         )
 import Debug exposing (log)
 import Dict exposing (Dict)
@@ -272,6 +273,7 @@ joinChatReq state chatid memberName =
                             List.map Tuple.second
                                 gamestate.members
                         , isPublic = Nothing /= getPublicGame chatid state
+                        , rejoinMethod = Nothing
                         }
                 )
 
@@ -341,6 +343,7 @@ rejoinChatReq state memberid chatid memberName isPublic =
                             , memberName = memberName
                             , otherMembers = List.map Tuple.second members
                             , isPublic = Nothing /= getPublicGame chatid state
+                            , rejoinMethod = Just RejoinNeverLeft
                             }
                     )
 
@@ -374,6 +377,15 @@ rejoinChatReqInternal state chatid memberName isPublic =
                         (removeTrailingDots memberName)
                         isPublic
 
+        Just (JoinChatRsp record) ->
+            ( state2
+            , Just <|
+                JoinChatRsp
+                    { record
+                        | rejoinMethod = Just RejoinExisting
+                    }
+            )
+
         _ ->
             ( state2, msg )
 
@@ -385,7 +397,22 @@ rejoinCreateNew state chatid memberName isPublic =
     else
         case Dict.get chatid state.gameDict of
             Nothing ->
-                newChatReq state memberName <| Just chatid
+                let
+                    ( state2, message ) =
+                        newChatReq state memberName <| Just chatid
+                in
+                case message of
+                    Just (JoinChatRsp record) ->
+                        ( state2
+                        , Just <|
+                            JoinChatRsp
+                                { record
+                                    | rejoinMethod = Just RejoinNew
+                                }
+                        )
+
+                    _ ->
+                        ( state2, message )
 
             _ ->
                 ( state
@@ -484,6 +511,7 @@ newPublicChatReqInternal state memberName chatName =
             , memberName = memberName
             , otherMembers = []
             , isPublic = True
+            , rejoinMethod = Nothing
             }
     )
 
@@ -539,6 +567,7 @@ newChatReqInternal state memberName gameid =
             , memberName = memberName
             , otherMembers = []
             , isPublic = False
+            , rejoinMethod = Nothing
             }
     )
 
