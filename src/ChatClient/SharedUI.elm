@@ -20,17 +20,13 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Need a new message to turn a memberid into otherMembers, chatid, and memberName. otherMembers is the only thing we can't compute on the client side, but might as well send the other info as well. Call this at restore time.
+Send RejoinChatReq instead of a whole state machine full of tries at SendReq, JoinChatReq, and NewPublicChatReq.
 
 It's bit confusing to have two separate windows in a single browser. They share the persistence, so can't be really separate. It would be lovely to be able to detect that and do something reasonable, like maybe the second session isn't persistent.
-
-"Clear" button by the chat "ID" to clear the chat output.
 
 "Mute" another member by clicking on their name in the "Members" list.
 "Unmute" by clicking on their name in the (new) "Muted" list.
 Persist the "Muted" list for each chat.
-
-How to persist multiple windows in a single browser? The only real problem is that the list of chats may be different between the two, as will the memberid and name for each, if the two are in a single chat.
 
 Encrypted chats.
 
@@ -879,7 +875,7 @@ receive interface message model =
                         ! []
 
                 _ ->
-                    continueRestoreAfterErrorRsp error.kind error.message model
+                    continueRestore model
 
         _ ->
             { mdl
@@ -896,18 +892,13 @@ delayedAction updater =
 
 receiveRsp : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
 receiveRsp chatid memberName message server model =
-    case model.restoreState of
-        RestoreDone ->
-            model
-                ! [ delayedAction <|
-                        receiveRspDelayed chatid
-                            memberName
-                            message
-                            server
-                  ]
-
-        _ ->
-            continueRestoreAfterReceiveRsp model
+    model
+        ! [ delayedAction <|
+                receiveRspDelayed chatid
+                    memberName
+                    message
+                    server
+          ]
 
 
 receiveRspDelayed : GameId -> MemberName -> String -> Server -> Model -> ( Model, Cmd Msg )
@@ -975,7 +966,7 @@ joinChatRsp chatid memberid memberName otherMembers isPublic server model =
                         model
 
                 ( mdl2, cmd2 ) =
-                    continueRestoreAfterJoinRsp mdl
+                    continueRestore mdl
             in
             mdl2 ! [ cmd, cmd2 ]
 
@@ -1040,7 +1031,7 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                 NoPendingChat ->
                     { mdl
                         | error =
-                            Just "JoinChatRsp for unknown chat."
+                            Just "JoinChatRsp for without pending chat."
                     }
                         ! []
 
@@ -2218,22 +2209,45 @@ reconnectToChat chat model =
                         Just s2 ->
                             ( s2, model )
     in
-    ( mdl
-    , send server model <|
-        -- Try first to reactivate existing memberid
-        SendReq
-            { memberid =
-                case chat.members of
-                    [] ->
-                        -- won't happen, but will error, so all OK.
-                        ""
+    case chat.members of
+        [] ->
+            ( mdl, Cmd.none )
 
-                    ( memberid, _ ) :: _ ->
-                        log "Attempting to reconnect memberid"
-                            memberid
-            , message = ""
+        ( memberid, memberName ) :: rest ->
+            let
+                chatkey =
+                    chatKey chat
+
+                pendingChat =
+                    case Dict.get chatkey mdl.chats of
+                        Nothing ->
+                            NewPendingChat chat
+
+                        Just info ->
+                            ExistingPendingChat chatkey
+            in
+            { mdl
+                | pendingChat = pendingChat
+                , restoreState =
+                    case mdl.restoreState of
+                        RestoreReconnectChats record ->
+                            RestoreReconnectChats
+                                { record
+                                    | waiting =
+                                        { chat | members = rest }
+                                }
+
+                        state ->
+                            state
             }
-    )
+                ! [ send server model <|
+                        RejoinChatReq
+                            { memberid = memberid
+                            , chatid = chat.chatid
+                            , memberName = memberName
+                            , isPublic = chat.isPublic
+                            }
+                  ]
 
 
 startReconnectingChats : SavedModel -> List ChatInfo -> Model -> ( Model, Cmd Msg )
@@ -2264,227 +2278,61 @@ startReconnectingChats savedModel chats model =
             reconnectToChat c mdl
 
 
-dot : String
-dot =
-    "."
+{-| We got an ErrorRsp or JoinChatRsp while rejoining saved chats.
 
+If the rejoin was successful, need to restore that chat's history.
 
-removeTrailingDots : String -> String
-removeTrailingDots string =
-    if String.endsWith dot string then
-        removeTrailingDots <| String.dropRight 1 string
-    else
-        string
-
-
-countTrailingDots : String -> Int
-countTrailingDots string =
-    String.length string - String.length (removeTrailingDots string)
-
-
-maxTrailingDots : Int
-maxTrailingDots =
-    3
-
-
-nextMemberName : String -> Maybe String
-nextMemberName memberName =
-    if countTrailingDots memberName < maxTrailingDots then
-        Just <| memberName ++ "."
-    else
-        Nothing
-
-
-populateServer : ChatInfo -> Model -> Model
-populateServer chat model =
-    let
-        ( url, isRemote ) =
-            case chat.server of
-                Nothing ->
-                    ( model.serverUrl, False )
-
-                Just server ->
-                    ( serverUrl server, True )
-    in
-    { model
-        | serverUrl = url
-        , isRemote = isRemote
-    }
-
-
-joinAChat : ChatInfo -> MemberName -> Model -> ( Model, Cmd Msg )
-joinAChat chat memberName model =
-    populateServer chat
-        { model
-            | memberName = memberName
-            , chatName = chat.chatName
-            , chatid =
-                log
-                    ("joinAChat, memberName: "
-                        ++ memberName
-                        ++ ", chatName: "
-                        ++ chat.chatName
-                        ++ "chatid"
-                    )
-                    chat.chatid
-        }
-        ! [ Task.perform (\() -> JoinChat) <| Task.succeed () ]
-
-
-makeAPublicChat : ChatInfo -> MemberName -> Model -> ( Model, Cmd Msg )
-makeAPublicChat chat memberName model =
-    populateServer chat
-        { model
-            | memberName = memberName
-            , publicChatName =
-                log
-                    ("makeAPublicChat, memberName: " ++ memberName ++ "chatid")
-                    chat.chatid
-        }
-        ! [ Task.perform (\() -> NewPublicChat) <| Task.succeed () ]
-
-
-genericUnknownRequestError : ErrorKind
-genericUnknownRequestError =
-    UnknownRequestError { request = "Unknown" }
-
-
-continueRestoreAfterErrorRsp : ErrorKind -> String -> Model -> ( Model, Cmd Msg )
-continueRestoreAfterErrorRsp errorKind errmsg model =
-    case model.restoreState of
-        RestoreReconnectChats record ->
-            let
-                { waiting, chats } =
-                    record
-            in
-            case errorKind of
-                UnknownMemberidError _ ->
-                    case waiting.members of
-                        [] ->
-                            continueRestoreAfterErrorRsp
-                                genericUnknownRequestError
-                                "No members"
-                                model
-
-                        ( _, memberName ) :: _ ->
-                            joinAChat waiting memberName model
-
-                MemberExistsError { memberName } ->
-                    case nextMemberName memberName of
-                        Nothing ->
-                            continueRestoreAfterErrorRsp
-                                genericUnknownRequestError
-                                "Out of trailing dots"
-                                model
-
-                        Just name ->
-                            joinAChat waiting name model
-
-                UnknownChatidError { chatid } ->
-                    if not waiting.isPublic then
-                        continueRestoreAfterErrorRsp
-                            genericUnknownRequestError
-                            "Unknown private chat"
-                            model
-                    else
-                        --It's an unknown public chat. Recreate it.
-                        case waiting.members of
-                            [] ->
-                                continueRestoreAfterErrorRsp
-                                    genericUnknownRequestError
-                                    "No members"
-                                    model
-
-                            ( _, memberName ) :: _ ->
-                                makeAPublicChat waiting memberName model
-
-                _ ->
-                    startReconnectingChats record.savedModel chats model
-
-        _ ->
-            { model
-                | restoreState = RestoreDone
-                , error = Just errmsg
-            }
-                ! []
-
-
-{-| Called when we get a ReceiveRsp after sending an empty message.
-
-The old memberid still exists on the server, so we can just use it.
-Need to record the chat.
+In either case, need to send a RejoinChatReq on the next saved member or chat.
 
 -}
-continueRestoreAfterReceiveRsp : Model -> ( Model, Cmd Msg )
-continueRestoreAfterReceiveRsp model =
-    case model.restoreState of
-        RestoreReconnectChats { savedModel, waiting, chats } ->
-            let
-                ( mdl, cmd ) =
-                    case List.head waiting.members of
-                        Nothing ->
-                            model ! []
-
-                        Just pair ->
-                            let
-                                chatkey =
-                                    chatKey waiting
-
-                                -- We have no way to restore otherMembers.
-                                -- Need to have another message for that.
-                                chat =
-                                    { waiting
-                                        | members = [ pair ]
-                                    }
-                            in
-                            { model
-                                | chats =
-                                    Dict.insert chatkey chat model.chats
-                            }
-                                ! [ saveChat chat model ]
-
-                ( mdl2, cmd2 ) =
-                    startReconnectingChats savedModel chats mdl
-            in
-            mdl2 ! [ cmd, cmd2 ]
-
-        _ ->
-            { model | restoreState = RestoreDone } ! []
-
-
-{-| We successfully rejoined a chat.
-
-Just need to restore the chat history, and continue the restore.
-
--}
-continueRestoreAfterJoinRsp : Model -> ( Model, Cmd Msg )
-continueRestoreAfterJoinRsp model =
+continueRestore : Model -> ( Model, Cmd Msg )
+continueRestore model =
     case model.restoreState of
         RestoreReconnectChats { savedModel, waiting, chats } ->
             let
                 chatkey =
                     chatKey waiting
 
-                chat =
-                    { waiting | settings = waiting.settings }
-
-                mdl =
-                    case Dict.get chatkey model.chats of
+                ( mdl, maybeChat ) =
+                    let
+                        mc =
+                            Dict.get chatkey model.chats
+                    in
+                    case mc of
                         Nothing ->
-                            model
+                            ( model, Nothing )
 
                         Just chat ->
-                            { model
+                            let
+                                c =
+                                    { chat | settings = waiting.settings }
+                            in
+                            ( { model
                                 | chats =
-                                    Dict.insert chatkey chat model.chats
-                            }
+                                    Dict.insert chatkey c model.chats
+                              }
+                            , Just c
+                            )
+
+                chats2 =
+                    if maybeChat == Nothing then
+                        chats
+                    else if waiting.members /= [] then
+                        waiting :: chats
+                    else
+                        chats
 
                 ( mdl2, cmd ) =
-                    startReconnectingChats savedModel chats mdl
+                    startReconnectingChats savedModel chats2 mdl
             in
             mdl2
                 ! [ cmd
-                  , saveChat chat mdl2
+                  , case maybeChat of
+                        Nothing ->
+                            Cmd.none
+
+                        Just chat ->
+                            saveChat chat mdl2
                   ]
 
         _ ->
