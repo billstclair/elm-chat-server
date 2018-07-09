@@ -20,7 +20,9 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Send RejoinChatReq instead of a whole state machine full of tries at SendReq, JoinChatReq, and NewPublicChatReq.
+There's a delay in the second member rejoin when multiple members in a chat from the same client.
+
+Move gamePlayersDict maintenance from Server Model to ServerInterface.ServerState.
 
 It's bit confusing to have two separate windows in a single browser. They share the persistence, so can't be really separate. It would be lovely to be able to detect that and do something reasonable, like maybe the second session isn't persistent.
 
@@ -31,8 +33,6 @@ Persist the "Muted" list for each chat.
 Encrypted chats.
 
 Lock private chats so nobody else can join. Should look like the chat doesn't exist to anybody who tries to join. Specify valid usernames, and auto-lock when all have joined.
-
-Move gamePlayersDict maintenance from Server Model to ServerInterface.ServerState.
 
 If the server goes down, LeaveChatReq should time out and clean up the client connection. Timeout sends, too. And joins.
 
@@ -98,6 +98,7 @@ import Html
         , option
         , p
         , select
+        , span
         , table
         , text
         )
@@ -1693,20 +1694,21 @@ inputRows model info =
         (\( id, name ) ->
             tr
                 [ th <| name ++ ": "
-                , Html.td [ colspan 2 ]
+                , Html.td [ colspan 3 ]
                     [ ElmChat.inputBox
                         40
                         "Send"
                         (ChatSend id)
                         info.settings
+                    , if onlyone then
+                        text ""
+                      else
+                        span []
+                            [ text " "
+                            , button [ onClick <| LeaveChat id ]
+                                [ text "Leave" ]
+                            ]
                     ]
-                , if onlyone then
-                    text ""
-                  else
-                    td
-                        [ button [ onClick <| LeaveChat id ]
-                            [ text "Leave" ]
-                        ]
                 ]
         )
         info.members
@@ -2108,7 +2110,18 @@ receiveLocalStorage operation key value model =
                     \savedModel chats chatKeys ->
                         case List.head chatKeys of
                             Nothing ->
-                                startReconnectingChats savedModel chats model
+                                let
+                                    -- Reverse member lists to preserve order on screen
+                                    chats2 =
+                                        List.map
+                                            (\chat ->
+                                                { chat
+                                                    | members = List.reverse chat.members
+                                                }
+                                            )
+                                            chats
+                                in
+                                startReconnectingChats savedModel chats2 model
 
                             Just key ->
                                 ( { model
