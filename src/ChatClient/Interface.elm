@@ -12,8 +12,7 @@
 
 module ChatClient.Interface
     exposing
-        ( getPublicGame
-        , messageProcessor
+        ( messageProcessor
         , messageToGameid
         , messageToPlayerid
         )
@@ -41,8 +40,8 @@ import WebSocketFramework.ServerInterface as ServerInterface
         ( gameCount
         , getGame
         , getPlayer
+        , isPublicGame
         , updateGame
-        , updatePlayer
         )
 import WebSocketFramework.Types as Types
     exposing
@@ -56,29 +55,6 @@ import WebSocketFramework.Types as Types
 
 type alias ServerState =
     Types.ServerState GameState Player
-
-
-{-| This should move into WebSocketFramework,
-and publicGames should become a Dict.
--}
-getPublicGame : GameId -> ServerState -> Maybe PublicGame
-getPublicGame gameid state =
-    case List.filter (.gameid >> (==) gameid) state.publicGames of
-        game :: _ ->
-            Just game
-
-        _ ->
-            Nothing
-
-
-isPublicGame : GameId -> ServerState -> Bool
-isPublicGame gameid state =
-    case getPublicGame gameid state of
-        Nothing ->
-            False
-
-        Just _ ->
-            True
 
 
 dummyMemberid : PlayerId
@@ -161,18 +137,13 @@ messageProcessor state message =
                                     if members == [] then
                                         ServerInterface.removeGame
                                             info.gameid
-                                            (List.map Tuple.first
-                                                gamestate.members
-                                            )
                                             state
                                     else
                                         ServerInterface.removePlayer memberid <|
                                             updateGame info.gameid
-                                                (Just
-                                                    { gamestate
-                                                        | members = members
-                                                    }
-                                                )
+                                                { gamestate
+                                                    | members = members
+                                                }
                                                 state
                             in
                             ( state2
@@ -249,13 +220,11 @@ joinChatReq state chatid memberName =
 
                     state3 =
                         updateGame chatid
-                            (Just
-                                { gamestate
-                                    | members =
-                                        ( memberid, memberName )
-                                            :: gamestate.members
-                                }
-                            )
+                            { gamestate
+                                | members =
+                                    ( memberid, memberName )
+                                        :: gamestate.members
+                            }
                             state2
 
                     info =
@@ -272,7 +241,7 @@ joinChatReq state chatid memberName =
                         , otherMembers =
                             List.map Tuple.second
                                 gamestate.members
-                        , isPublic = Nothing /= getPublicGame chatid state
+                        , isPublic = isPublicGame chatid state3
                         , rejoinMethod = Nothing
                         }
                 )
@@ -311,7 +280,7 @@ nextMemberName memberName =
 
 rejoinChatReq : ServerState -> PlayerId -> GameId -> MemberName -> Bool -> ( ServerState, Maybe Message )
 rejoinChatReq state memberid chatid memberName isPublic =
-    case Dict.get memberid state.playerDict of
+    case getPlayer memberid state of
         Nothing ->
             rejoinChatReqInternal state
                 chatid
@@ -319,7 +288,7 @@ rejoinChatReq state memberid chatid memberName isPublic =
                 isPublic
 
         Just { gameid } ->
-            case Dict.get gameid state.gameDict of
+            case getGame gameid state of
                 Nothing ->
                     ( state
                     , Just <|
@@ -342,7 +311,7 @@ rejoinChatReq state memberid chatid memberName isPublic =
                             , memberid = Just memberid
                             , memberName = memberName
                             , otherMembers = List.map Tuple.second members
-                            , isPublic = Nothing /= getPublicGame chatid state
+                            , isPublic = isPublicGame chatid state
                             , rejoinMethod = Just RejoinNeverLeft
                             }
                     )
@@ -395,7 +364,7 @@ rejoinCreateNew state chatid memberName isPublic =
     if isPublic then
         newPublicChatReq state memberName chatid
     else
-        case Dict.get chatid state.gameDict of
+        case getGame chatid state of
             Nothing ->
                 let
                     ( state2, message ) =

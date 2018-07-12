@@ -40,23 +40,24 @@ import Debug exposing (log)
 import List.Extra as LE
 import WebSocketFramework.Server
     exposing
-        ( Msg
-        , ServerMessageSender
+        ( ServerMessageSender
         , ServerPlayersDeleter
         , Socket
         , UserFunctions
-        , WrappedModel(..)
+        , WrappedModel
         , sendToAll
         , sendToOne
         , sendToOthers
+        , setDeathRowDuration
+        , setState
         , verbose
         )
 import WebSocketFramework.ServerInterface
     exposing
         ( getGame
         , getPlayer
+        , removePlayer
         , updateGame
-        , updatePlayer
         )
 import WebSocketFramework.Types
     exposing
@@ -109,10 +110,6 @@ errorWrapper { description, message } =
         }
 
 
-type alias Model =
-    WebSocketFramework.Server.Model ServerModel Message GameState Player
-
-
 messageSender : ServerMessageSender ServerModel Message GameState Player
 messageSender model socket state request response =
     case response of
@@ -147,14 +144,10 @@ messageSender model socket state request response =
 
                 Just oldmid ->
                     let
-                        (WrappedModel m1) =
-                            model
-
-                        m =
-                            -- deathRowDuration change is temporary
-                            { m1 | deathRowDuration = settings.deathRowDuration }
+                        mdl =
+                            setDeathRowDuration model settings.deathRowDuration
                     in
-                    WrappedModel m
+                    mdl
                         ! [ sendToOne
                                 (verbose model)
                                 messageEncoder
@@ -233,7 +226,7 @@ deletePlayer id state =
         Just info ->
             let
                 state2 =
-                    updatePlayer id Nothing state
+                    removePlayer id state
             in
             case getGame info.gameid state2 of
                 Nothing ->
@@ -247,41 +240,46 @@ deletePlayer id state =
                                 gamestate.members
                     in
                     updateGame info.gameid
-                        (Just { gamestate | members = members })
+                        { gamestate | members = members }
                         state2
 
 
 deletePlayers : ServerPlayersDeleter ServerModel Message GameState Player
-deletePlayers model playerids serverState =
-    let
-        delete =
-            \playerid ( state, cmd ) ->
-                case getPlayer playerid state of
-                    Nothing ->
-                        ( state, cmd )
+deletePlayers model chatid memberids serverState =
+    case getGame chatid serverState of
+        Nothing ->
+            model ! []
 
-                    Just info ->
-                        deletePlayer playerid state
-                            ! [ cmd
-                              , sendToAll info.gameid
-                                    model
-                                    messageEncoder
-                                <|
-                                    LeaveChatRsp
-                                        { chatid = info.gameid
-                                        , memberName = info.player
-                                        }
-                              ]
+        Just gameState ->
+            let
+                delete =
+                    \memberid ( gs, cmd ) ->
+                        case getPlayer memberid serverState of
+                            Nothing ->
+                                ( gs, cmd )
 
-        (WrappedModel mdl) =
-            model
-    in
-    let
-        ( state, cmd ) =
-            List.foldl delete ( serverState, Cmd.none ) playerids
-    in
-    WrappedModel { mdl | state = state }
-        ! [ cmd ]
+                            Just info ->
+                                { gs
+                                    | members =
+                                        List.filter (\( mid, _ ) -> mid /= memberid)
+                                            gs.members
+                                }
+                                    ! [ cmd
+                                      , sendToAll chatid
+                                            model
+                                            messageEncoder
+                                        <|
+                                            LeaveChatRsp
+                                                { chatid = chatid
+                                                , memberName = info.player
+                                                }
+                                      ]
+
+                ( gs2, cmd ) =
+                    List.foldl delete ( gameState, Cmd.none ) memberids
+            in
+            setState model (updateGame chatid gs2 serverState)
+                ! [ cmd ]
 
 
 userFunctions : UserFunctions ServerModel Message GameState Player
