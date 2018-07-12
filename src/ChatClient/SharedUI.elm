@@ -20,6 +20,8 @@ module ChatClient.SharedUI
 
 {-| TODO
 
+Still some scroll-to-bottom problems when switching chats.
+
 Encrypted chats.
 
 There's a delay in the second member rejoin when multiple members in a chat from the same client.
@@ -182,6 +184,12 @@ subscriptions model =
                     Just receivePort ->
                         receivePort <|
                             LS.receiveWrapper ReceiveLocalStorage localStoragePrefix
+              , case model.delayedNotify of
+                    Nothing ->
+                        Sub.none
+
+                    Just ( delay, _ ) ->
+                        Time.every delay DelayedNotify
               ]
             , Dict.toList model.connectedServers
                 |> List.map
@@ -260,6 +268,7 @@ type alias Model =
     , showNotifications : Bool
     , notifyPort : NotifyPort Msg
     , lastNotifyTime : Time
+    , delayedNotify : Maybe ( Time, String )
     , error : Maybe String
     }
 
@@ -268,6 +277,7 @@ type Msg
     = Noop
     | SetTime Time
     | DelayedAction (Model -> ( Model, Cmd Msg )) Time
+    | DelayedNotify Time
     | SwitchPage WhichPage
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
@@ -365,6 +375,7 @@ init timeZoneOffset ports receiveItemPort notify =
     , showNotifications = False
     , notifyPort = notify
     , lastNotifyTime = 0
+    , delayedNotify = Nothing
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -521,6 +532,18 @@ updateInternal msg model =
         DelayedAction updater time ->
             updater { model | time = time }
 
+        DelayedNotify time ->
+            case model.delayedNotify of
+                Nothing ->
+                    model ! []
+
+                Just ( _, message ) ->
+                    { model
+                        | lastNotifyTime = model.time
+                        , delayedNotify = Nothing
+                    }
+                        ! [ notificationCmd message model ]
+
         WebSocketMessage server json ->
             case decodeMessage messageDecoder json of
                 Err msg ->
@@ -556,7 +579,11 @@ updateInternal msg model =
                           ]
 
         _ ->
-            updateUIChanges msg { model | lastNotifyTime = model.time }
+            updateUIChanges msg
+                { model
+                    | lastNotifyTime = model.time
+                    , delayedNotify = Nothing
+                }
 
 
 updateUIChanges : Msg -> Model -> ( Model, Cmd Msg )
@@ -597,11 +624,9 @@ updateUIChanges msg model =
             in
             { model | showNotifications = showNotifications }
                 ! [ if showNotifications then
-                        createNotification
-                            model.notifyPort
+                        notificationCmd
                             "You have successfully enabled notifications."
-                            Nothing
-                            Nothing
+                            model
                     else
                         Cmd.none
                   ]
@@ -984,7 +1009,7 @@ receiveRspDelayed chatid memberName message server model =
 
 minIdleTimeBeforeNotification : Time
 minIdleTimeBeforeNotification =
-    1.0 * Time.minute
+    60 * Time.second
 
 
 notify : String -> Model -> ( Model, Cmd Msg )
@@ -1002,14 +1027,30 @@ notify message model =
                     - (lastNotifyTime + minIdleTimeBeforeNotification)
     in
     if model.showNotifications && diff > 0 then
-        { model | lastNotifyTime = model.time }
-            ! [ createNotification model.notifyPort
-                    "Elm Chat"
-                    (Just message)
-                    Nothing
-              ]
+        { model
+            | lastNotifyTime = model.time
+            , delayedNotify = Nothing
+        }
+            ! [ notificationCmd message model ]
     else
-        model ! []
+        case model.delayedNotify of
+            Just _ ->
+                model ! []
+
+            Nothing ->
+                { model
+                    | delayedNotify =
+                        Just ( negate diff, message )
+                }
+                    ! []
+
+
+notificationCmd : String -> Model -> Cmd Msg
+notificationCmd message model =
+    createNotification model.notifyPort
+        "Elm Chat"
+        (Just message)
+        Nothing
 
 
 joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
