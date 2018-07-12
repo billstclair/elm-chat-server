@@ -20,9 +20,11 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-There's a delay in the second member rejoin when multiple members in a chat from the same client.
+System notifications on receipt while window not showing:
+This is actually a new port module to publish as a package.
+<https://developer.mozilla.org/en-US/docs/Web/API/notification>
 
-Move gamePlayersDict maintenance from Server Model to ServerInterface.ServerState.
+There's a delay in the second member rejoin when multiple members in a chat from the same client.
 
 It's bit confusing to have two separate windows in a single browser. They share the persistence, so can't be really separate. It would be lovely to be able to detect that and do something reasonable, like maybe the second session isn't persistent.
 
@@ -39,10 +41,6 @@ If the server goes down, LeaveChatReq should time out and clean up the client co
 Limit number of participants in a chat to something large, but which will limit DoS attacks at least a little bit.
 
 Enter/Return should auto-press "New" or "Join" button.
-
-System notifications on receipt while window not showing:
-This is actually a new port module to publish as a package.
-<https://developer.mozilla.org/en-US/docs/Web/API/notification>
 
 Don't delete public chats until necessary to satisfy limit. Admin mode to enable deleting them by hand. Clear creator when he disconnects. Let him delete the public game when he leaves, if nobody else is in it.
 
