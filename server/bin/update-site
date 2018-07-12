@@ -1,0 +1,3 @@
+#!/bin/bash
+
+rsyncit -av --exclude elm-stuff --exclude node_modules .
