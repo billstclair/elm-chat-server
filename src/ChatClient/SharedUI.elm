@@ -20,7 +20,7 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Only notify if you haven't done anything in the UI for 1 minute. At least 5 minutes between idle notifications. Or maybe only one notification until some activity in the UI.
+Encrypted chats.
 
 There's a delay in the second member rejoin when multiple members in a chat from the same client.
 
@@ -29,8 +29,6 @@ It's bit confusing to have two separate windows in a single browser. They share 
 "Mute" another member by clicking on their name in the "Members" list.
 "Unmute" by clicking on their name in the (new) "Muted" list.
 Persist the "Muted" list for each chat.
-
-Encrypted chats.
 
 Lock private chats so nobody else can join. Should look like the chat doesn't exist to anybody who tries to join. Specify valid usernames, and auto-lock when all have joined.
 
@@ -1665,6 +1663,9 @@ viewMainPage model =
                     ]
                 , p []
                     [ text "The chat 'Server' defaults to the server running on the machine from which you loaded this page. You can change it, if you know of another one. To restore the default, reload this page. If you uncheck the box next to the 'Server', the chat will run locally in your browser, and you can talk to yourself (this is a development testing mode)." ]
+                , p []
+                    [ text "To hide this help, click the 'Hide Help' button. To toggle giving notifications on receiving a message after being idle for a minute or more, click 'Show Notifications' or 'Hide Notifications'. The first time you click 'Show Notifications', your browser will ask whether to allow notifications. If you do, you'll see a test notification. If you don't, you won't see any notifications until you go into preferences in your browser and enable them."
+                    ]
                 ]
         ]
 
