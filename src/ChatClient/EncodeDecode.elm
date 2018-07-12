@@ -590,6 +590,7 @@ savedModelEncoder model =
         , ( "chatid", JE.string model.chatid )
         , ( "publicChatName", JE.string model.publicChatName )
         , ( "hideHelp", JE.bool model.hideHelp )
+        , ( "showNotifications", JE.bool model.showNotifications )
         ]
 
 
@@ -611,6 +612,7 @@ savedModelDecoder =
         |> required "chatid" JD.string
         |> required "publicChatName" JD.string
         |> required "hideHelp" JD.bool
+        |> optional "showNotifications" JD.bool False
 
 
 whichPageEncoder : WhichPage -> Value

@@ -89,6 +89,7 @@ type alias SavedModel =
     , chatid : String
     , publicChatName : String
     , hideHelp : Bool
+    , showNotifications : Bool
     }
 
 

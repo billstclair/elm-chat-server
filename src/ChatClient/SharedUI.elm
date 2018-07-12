@@ -20,9 +20,7 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-System notifications on receipt while window not showing:
-This is actually a new port module to publish as a package.
-<https://developer.mozilla.org/en-US/docs/Web/API/notification>
+Only notify if you haven't done anything in the UI for 1 minute. At least 5 minutes between idle notifications. Or maybe only one notification until some activity in the UI.
 
 There's a delay in the second member rejoin when multiple members in a chat from the same client.
 
@@ -121,6 +119,7 @@ import Json.Encode as JE exposing (Value)
 import List.Extra as LE
 import LocalStorage exposing (LocalStorage)
 import LocalStorage.SharedTypes as LS
+import SystemNotification exposing (NotifyPort, createNotification)
 import Task
 import Time exposing (Time)
 import WebSocket
@@ -150,19 +149,19 @@ defaultTimezoneOffset =
 program : LS.Ports Msg -> Platform.Program Never Model Msg
 program ports =
     Html.program
-        { init = init defaultTimezoneOffset ports Nothing
+        { init = init defaultTimezoneOffset ports Nothing (\_ -> Cmd.none)
         , view = view
         , update = update
         , subscriptions = subscriptions
         }
 
 
-programWithFlags : LS.Ports Msg -> LS.ReceiveItemPort Msg -> Platform.Program Int Model Msg
-programWithFlags ports receiveItemPort =
+programWithFlags : LS.Ports Msg -> LS.ReceiveItemPort Msg -> NotifyPort Msg -> Platform.Program Int Model Msg
+programWithFlags ports receiveItemPort notify =
     Html.programWithFlags
         { init =
             \timezoneOffset ->
-                init timezoneOffset ports (Just receiveItemPort)
+                init timezoneOffset ports (Just receiveItemPort) notify
         , view = view
         , update = update
         , subscriptions = subscriptions
@@ -260,6 +259,8 @@ type alias Model =
     , timeZoneOffset : Int
     , storage : LocalStorage Msg
     , receiveItemPort : Maybe (LS.ReceiveItemPort Msg)
+    , showNotifications : Bool
+    , notifyPort : NotifyPort Msg
     , error : Maybe String
     }
 
@@ -279,6 +280,7 @@ type Msg
     | SetChatid String
     | SetPublicChatName String
     | ShowHideHelp
+    | ShowHideNotifications
     | ChangeChat String
     | NewChat
     | JoinChat
@@ -329,8 +331,8 @@ initialProxyServer =
     makeProxyServer messageProcessor Receive
 
 
-init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> ( Model, Cmd Msg )
-init timeZoneOffset ports receiveItemPort =
+init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> NotifyPort Msg -> ( Model, Cmd Msg )
+init timeZoneOffset ports receiveItemPort notify =
     let
         storage =
             LocalStorage.make ports localStoragePrefix
@@ -361,6 +363,8 @@ init timeZoneOffset ports receiveItemPort =
     , timeZoneOffset = timeZoneOffset
     , storage = storage
     , receiveItemPort = receiveItemPort
+    , showNotifications = False
+    , notifyPort = notify
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -544,6 +548,22 @@ updateInternal msg model =
 
         ShowHideHelp ->
             { model | hideHelp = not model.hideHelp } ! []
+
+        ShowHideNotifications ->
+            let
+                showNotifications =
+                    not model.showNotifications
+            in
+            { model | showNotifications = showNotifications }
+                ! [ if showNotifications then
+                        createNotification
+                            model.notifyPort
+                            "You have successfully enabled notifications."
+                            Nothing
+                            Nothing
+                    else
+                        Cmd.none
+                  ]
 
         ReceiveServerLoadFile result ->
             case result of
@@ -929,14 +949,40 @@ receiveRspDelayed chatid memberName message server model =
                             Dict.insert chatkey chat2 model.chats
                         , error = Nothing
                     }
+
+                isRemote =
+                    Nothing
+                        == LE.find (\( _, name ) -> name == memberName)
+                            chat.members
+
+                ( mdl2, cmd2 ) =
+                    if isRemote then
+                        notify (memberName ++ " talked in " ++ chat.chatName)
+                            mdl
+                    else
+                        ( mdl, Cmd.none )
             in
-            mdl
+            mdl2
                 ! [ if chatkey == model.currentChat then
                         cmd
                     else
                         Cmd.none
                   , saveChat chat2 mdl
+                  , cmd2
                   ]
+
+
+notify : String -> Model -> ( Model, Cmd Msg )
+notify message model =
+    if model.showNotifications then
+        model
+            ! [ createNotification model.notifyPort
+                    "Elm Chat"
+                    (Just message)
+                    Nothing
+              ]
+    else
+        model ! []
 
 
 joinChatRsp : GameId -> Maybe PlayerId -> MemberName -> MemberNames -> Bool -> Server -> Model -> ( Model, Cmd Msg )
@@ -1523,12 +1569,22 @@ pageSelector model =
 
 showHideHelpButton : Model -> Html Msg
 showHideHelpButton model =
-    button [ onClick ShowHideHelp ]
-        [ text <|
-            if model.hideHelp then
-                "Show Help"
-            else
-                "Hide Help"
+    span []
+        [ button [ onClick ShowHideHelp ]
+            [ text <|
+                if model.hideHelp then
+                    "Show Help"
+                else
+                    "Hide Help"
+            ]
+        , text " "
+        , button [ onClick ShowHideNotifications ]
+            [ text <|
+                if model.showNotifications then
+                    "Hide Notifications"
+                else
+                    "Show Notifications"
+            ]
         ]
 
 
@@ -1973,6 +2029,7 @@ modelToSaved model =
     , chatid = model.chatid
     , publicChatName = model.publicChatName
     , hideHelp = model.hideHelp
+    , showNotifications = model.showNotifications
     }
 
 
@@ -2002,6 +2059,7 @@ savedToModel savedModel defaults =
         , chatid = savedModel.chatid
         , publicChatName = savedModel.publicChatName
         , hideHelp = savedModel.hideHelp
+        , showNotifications = savedModel.showNotifications
     }
 
 

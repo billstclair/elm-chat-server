@@ -23,10 +23,11 @@ import LocalStorage.SharedTypes
         , ReceiveItemPort
         , SetItemPort
         )
+import SystemNotification exposing (NotifyPort)
 
 
 main =
-    programWithFlags ports receiveItem
+    programWithFlags ports receiveItem notify
 
 
 ports : Ports Msg
@@ -47,3 +48,6 @@ port listKeys : ListKeysPort msg
 
 
 port receiveItem : ReceiveItemPort msg
+
+
+port notify : NotifyPort msg
