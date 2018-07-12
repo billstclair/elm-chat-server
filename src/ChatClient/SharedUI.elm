@@ -261,6 +261,7 @@ type alias Model =
     , receiveItemPort : Maybe (LS.ReceiveItemPort Msg)
     , showNotifications : Bool
     , notifyPort : NotifyPort Msg
+    , lastNotifyTime : Time
     , error : Maybe String
     }
 
@@ -365,6 +366,7 @@ init timeZoneOffset ports receiveItemPort notify =
     , receiveItemPort = receiveItemPort
     , showNotifications = False
     , notifyPort = notify
+    , lastNotifyTime = 0
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -516,11 +518,52 @@ updateInternal msg model =
             model ! []
 
         SetTime time ->
-            { model | time = time } ! []
+            { model | time = time, lastNotifyTime = time } ! []
 
         DelayedAction updater time ->
             updater { model | time = time }
 
+        WebSocketMessage server json ->
+            case decodeMessage messageDecoder json of
+                Err msg ->
+                    { model | error = Just msg } ! []
+
+                Ok message ->
+                    update (Receive server message) model
+
+        Receive interface message ->
+            receive interface message model
+
+        ReceiveLocalStorage operation ports key value ->
+            receiveLocalStorage operation key value model
+
+        ChatUpdate settings cmd ->
+            case Dict.get model.currentChat model.chats of
+                Nothing ->
+                    model ! []
+
+                Just chat ->
+                    let
+                        chat2 =
+                            { chat | settings = settings }
+                    in
+                    { model
+                        | chats =
+                            Dict.insert model.currentChat
+                                chat2
+                                model.chats
+                    }
+                        ! [ cmd
+                          , saveChat chat2 model
+                          ]
+
+        _ ->
+            updateUIChanges msg { model | lastNotifyTime = model.time }
+
+
+updateUIChanges : Msg -> Model -> ( Model, Cmd Msg )
+updateUIChanges msg model =
+    case msg of
         SetMemberName name ->
             { model | memberName = name } ! []
 
@@ -717,26 +760,6 @@ updateInternal msg model =
             in
             mdl2 ! [ send server mdl2 GetPublicChatsReq ]
 
-        ChatUpdate settings cmd ->
-            case Dict.get model.currentChat model.chats of
-                Nothing ->
-                    model ! []
-
-                Just chat ->
-                    let
-                        chat2 =
-                            { chat | settings = settings }
-                    in
-                    { model
-                        | chats =
-                            Dict.insert model.currentChat
-                                chat2
-                                model.chats
-                    }
-                        ! [ cmd
-                          , saveChat chat2 model
-                          ]
-
         ChatSend memberid line settings ->
             case Dict.get model.currentChat model.chats of
                 Nothing ->
@@ -761,19 +784,8 @@ updateInternal msg model =
                                     }
                           ]
 
-        WebSocketMessage server json ->
-            case decodeMessage messageDecoder json of
-                Err msg ->
-                    { model | error = Just msg } ! []
-
-                Ok message ->
-                    update (Receive server message) model
-
-        Receive interface message ->
-            receive interface message model
-
-        ReceiveLocalStorage operation ports key value ->
-            receiveLocalStorage operation key value model
+        _ ->
+            model ! []
 
 
 incrementActivityCount : ChatKey -> String -> Int -> Model -> Model
@@ -972,10 +984,27 @@ receiveRspDelayed chatid memberName message server model =
                   ]
 
 
+minIdleTimeBeforeNotification : Time
+minIdleTimeBeforeNotification =
+    1.0 * Time.minute
+
+
 notify : String -> Model -> ( Model, Cmd Msg )
 notify message model =
-    if model.showNotifications then
-        model
+    let
+        time =
+            model.time
+
+        lastNotifyTime =
+            model.lastNotifyTime
+
+        diff =
+            log "Ticks until notify" <|
+                time
+                    - (lastNotifyTime + minIdleTimeBeforeNotification)
+    in
+    if model.showNotifications && diff > 0 then
+        { model | lastNotifyTime = model.time }
             ! [ createNotification model.notifyPort
                     "Elm Chat"
                     (Just message)
