@@ -44,7 +44,6 @@ import WebSocketFramework.Server
         , ServerPlayersDeleter
         , Socket
         , UserFunctions
-        , WrappedModel
         , sendToAll
         , sendToOne
         , sendToOthers

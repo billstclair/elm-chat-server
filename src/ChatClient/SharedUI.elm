@@ -2457,8 +2457,16 @@ continueRestore model =
                 ( mdl2, cmd ) =
                     startReconnectingChats savedModel chats2 mdl
             in
-            mdl2
+            let
+                ( mdl3, cmd2 ) =
+                    if mdl2.whichPage == PublicChatsPage then
+                        switchPage PublicChatsPage mdl2
+                    else
+                        ( mdl2, Cmd.none )
+            in
+            mdl3
                 ! [ cmd
+                  , cmd2
                   , case maybeChat of
                         Nothing ->
                             Cmd.none
@@ -2468,5 +2476,7 @@ continueRestore model =
                   ]
 
         _ ->
-            model
-                ! []
+            if model.whichPage == PublicChatsPage then
+                switchPage PublicChatsPage model
+            else
+                model ! []
