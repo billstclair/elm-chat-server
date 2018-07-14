@@ -961,12 +961,11 @@ receiveRspDelayed chatid memberName message server model =
         Just chat ->
             let
                 ( settings1, cmd ) =
-                    ElmChat.addChat chat.settings <|
-                        timestamp model
-                            ++ " "
-                            ++ memberName
-                            ++ ": "
-                            ++ message
+                    ElmChat.addLineSpec chat.settings <|
+                        ElmChat.makeLineSpec
+                            message
+                            (Just memberName)
+                            (Just model.time)
 
                 chat2 =
                     { chat | settings = settings1 }
@@ -1103,11 +1102,11 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                             }
 
                         ( settings, cmd ) =
-                            ElmChat.addChat info2.settings <|
-                                timestamp model
-                                    ++ " "
-                                    ++ memberName
-                                    ++ " joined the chat."
+                            ElmChat.addLineSpec info2.settings <|
+                                ElmChat.makeLineSpec
+                                    (memberName ++ " joined the chat.")
+                                    Nothing
+                                    (Just model.time)
 
                         info3 =
                             { info2 | settings = settings }
@@ -1234,11 +1233,11 @@ leaveChatRspDelayed chatid memberName server model =
                 -- Another member left
                 let
                     ( settings, cmd ) =
-                        ElmChat.addChat info.settings <|
-                            timestamp model
-                                ++ " "
-                                ++ memberName
-                                ++ " left the chat."
+                        ElmChat.addLineSpec info.settings <|
+                            ElmChat.makeLineSpec
+                                (memberName ++ " left the chat.")
+                                Nothing
+                                (Just model.time)
 
                     info2 =
                         { info
