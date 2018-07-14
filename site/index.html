@@ -22,7 +22,7 @@
 var date = new Date();
 var timezoneOffset = date.getTimezoneOffset();
 
-var app = Elm.PortChat.fullscreen(timezoneOffset);
+var app = Elm.PortChat.fullscreen();
 
 app.ports.notify.subscribe(function(obj) {
   elmNotifications.notify(obj.title, obj.body, obj.image);

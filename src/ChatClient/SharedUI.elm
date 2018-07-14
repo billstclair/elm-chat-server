@@ -14,11 +14,15 @@ module ChatClient.SharedUI
     exposing
         ( Msg(..)
         , localStoragePrefix
+        , portProgram
         , program
-        , programWithFlags
         )
 
 {-| TODO
+
+Delayed notification kicks in even when active. Needs work.
+
+Focus should move back to the text input box after clicking the "Send" button. Just featuring that you can use Enter/Return to send will help.
 
 Still some scroll-to-bottom problems when switching chats.
 
@@ -139,29 +143,20 @@ type alias Server =
     ServerInterface GameState Player Message Msg
 
 
-{-| New York during Daylight Saving Time
--}
-defaultTimezoneOffset : Int
-defaultTimezoneOffset =
-    240
-
-
 program : LS.Ports Msg -> Platform.Program Never Model Msg
 program ports =
     Html.program
-        { init = init defaultTimezoneOffset ports Nothing (\_ -> Cmd.none)
+        { init = init ports Nothing (\_ -> Cmd.none)
         , view = view
         , update = update
         , subscriptions = subscriptions
         }
 
 
-programWithFlags : LS.Ports Msg -> LS.ReceiveItemPort Msg -> NotifyPort Msg -> Platform.Program Int Model Msg
-programWithFlags ports receiveItemPort notify =
-    Html.programWithFlags
-        { init =
-            \timezoneOffset ->
-                init timezoneOffset ports (Just receiveItemPort) notify
+portProgram : LS.Ports Msg -> LS.ReceiveItemPort Msg -> NotifyPort Msg -> Platform.Program Never Model Msg
+portProgram ports receiveItemPort notify =
+    Html.program
+        { init = init ports (Just receiveItemPort) notify
         , view = view
         , update = update
         , subscriptions = subscriptions
@@ -262,7 +257,6 @@ type alias Model =
     , hideHelp : Bool
     , activityDict : Dict ChatKey ( String, Int )
     , time : Time
-    , timeZoneOffset : Int
     , storage : LocalStorage Msg
     , receiveItemPort : Maybe (LS.ReceiveItemPort Msg)
     , showNotifications : Bool
@@ -340,8 +334,8 @@ initialProxyServer =
     makeProxyServer messageProcessor Receive
 
 
-init : Int -> LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> NotifyPort Msg -> ( Model, Cmd Msg )
-init timeZoneOffset ports receiveItemPort notify =
+init : LS.Ports Msg -> Maybe (LS.ReceiveItemPort Msg) -> NotifyPort Msg -> ( Model, Cmd Msg )
+init ports receiveItemPort notify =
     let
         storage =
             LocalStorage.make ports localStoragePrefix
@@ -369,7 +363,6 @@ init timeZoneOffset ports receiveItemPort notify =
     , hideHelp = False
     , activityDict = Dict.empty
     , time = 0
-    , timeZoneOffset = timeZoneOffset
     , storage = storage
     , receiveItemPort = receiveItemPort
     , showNotifications = False
@@ -1555,7 +1548,7 @@ timestamp : Model -> String
 timestamp model =
     let
         time =
-            model.time - toFloat model.timeZoneOffset
+            model.time
 
         date =
             Date.fromTime time
@@ -1567,7 +1560,7 @@ time : Model -> String
 time model =
     let
         time =
-            model.time - toFloat model.timeZoneOffset
+            model.time
 
         date =
             Date.fromTime time

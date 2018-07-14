@@ -12,7 +12,7 @@
 
 port module PortChat exposing (..)
 
-import ChatClient.SharedUI exposing (Msg, programWithFlags)
+import ChatClient.SharedUI exposing (Msg, portProgram)
 import LocalStorage
 import LocalStorage.SharedTypes
     exposing
@@ -27,7 +27,7 @@ import SystemNotification exposing (NotifyPort)
 
 
 main =
-    programWithFlags ports receiveItem notify
+    portProgram ports receiveItem notify
 
 
 ports : Ports Msg
