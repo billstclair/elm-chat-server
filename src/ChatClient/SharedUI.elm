@@ -680,7 +680,11 @@ updateUIChanges msg model =
                              }
                                 |> incrementActivityCount chatkey "" 0
                             )
-                                ! [ ElmChat.restoreScroll settings ]
+                                ! [ ElmChat.restoreScroll settings
+
+                                  -- This selects the input box
+                                  , switchPageCmd MainPage Nothing
+                                  ]
 
         NewChat ->
             let
