@@ -20,9 +20,7 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Some small inconsistencies after refreshing page. Doesn't stay on Public Chats page if a member of more than one of them. May not have the same chat selected after refresh.
-
-Focus should move back to the text input box after clicking the "Send" button. Just featuring that you can use Enter/Return to send will help.
+Some small inconsistencies in restore after refreshing page. Doesn't stay on Public Chats page if a member of more than one of them. May not have the same chat selected after refresh.
 
 Still some scroll-to-bottom problems when switching chats.
 
@@ -84,6 +82,7 @@ import ChatClient.Types
 import Date exposing (Date)
 import Debug exposing (log)
 import Dict exposing (Dict)
+import Dom
 import ElmChat
 import Formatting as F exposing ((<>), Format)
 import Html
@@ -99,7 +98,7 @@ import Html
         , table
         , text
         )
-import Html.Attributes
+import Html.Attributes as Attributes
     exposing
         ( autofocus
         , checked
@@ -273,7 +272,7 @@ type Msg
     = Noop
     | SetTime Time
     | DelayedAction (Model -> ( Model, Cmd Msg )) Time
-    | SwitchPage WhichPage
+    | SwitchPage WhichPage (Maybe String)
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
     | SetMemberName String
@@ -572,6 +571,21 @@ updateInternal msg model =
             updateUIChanges msg model
 
 
+domFocusCmd : Maybe String -> Cmd Msg
+domFocusCmd domid =
+    case domid of
+        Nothing ->
+            Cmd.none
+
+        Just id ->
+            Task.attempt (\_ -> Noop) (Dom.focus id)
+
+
+chatInputFocusCmd : PlayerId -> Cmd Msg
+chatInputFocusCmd memberid =
+    domFocusCmd <| Just (chatInputId memberid)
+
+
 updateUIChanges : Msg -> Model -> ( Model, Cmd Msg )
 updateUIChanges msg model =
     case msg of
@@ -625,11 +639,16 @@ updateUIChanges msg model =
                 Ok url ->
                     { model | serverUrl = url } ! []
 
-        SwitchPage whichPage ->
+        SwitchPage whichPage domid ->
             if whichPage == model.whichPage then
-                model ! []
+                model
+                    ! [ if whichPage /= MainPage then
+                            Cmd.none
+                        else
+                            domFocusCmd <| firstMemberChatInputId model
+                      ]
             else
-                switchPage whichPage model
+                switchPage whichPage domid model
 
         ChangeChat json ->
             case decodeChatKey json of
@@ -770,9 +789,13 @@ updateUIChanges msg model =
             mdl2 ! [ send server mdl2 GetPublicChatsReq ]
 
         ChatSend memberid line settings ->
+            let
+                focusCmd =
+                    chatInputFocusCmd memberid
+            in
             case Dict.get model.currentChat model.chats of
                 Nothing ->
-                    model ! []
+                    model ! [ focusCmd ]
 
                 Just info ->
                     let
@@ -791,6 +814,7 @@ updateUIChanges msg model =
                                     { memberid = memberid
                                     , message = line
                                     }
+                          , focusCmd
                           ]
 
         _ ->
@@ -1115,6 +1139,9 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
             let
                 mdl =
                     { model | pendingChat = NoPendingChat }
+
+                domid =
+                    Just <| chatInputId id
             in
             case model.pendingChat of
                 NoPendingChat ->
@@ -1162,7 +1189,7 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                                         }
                                 in
                                 mdl2
-                                    ! [ switchPageCmd MainPage
+                                    ! [ switchPageCmd MainPage domid
                                       , saveChat info2 mdl2
                                       ]
 
@@ -1186,7 +1213,7 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                             }
                     in
                     mdl2
-                        ! [ switchPageCmd MainPage
+                        ! [ switchPageCmd MainPage domid
                           , saveChat info2 mdl2
                           ]
 
@@ -1316,16 +1343,21 @@ leaveChatRspDelayed chatid memberName server model =
                         else
                             chatKeyId current
                 }
-                    ! [ cmd ]
+                    ! [ cmd
+
+                      -- We're already on the main page,
+                      -- but this gets the first member input focused.
+                      , switchPageCmd MainPage Nothing
+                      ]
 
 
-switchPageCmd : WhichPage -> Cmd Msg
-switchPageCmd whichPage =
-    Task.perform SwitchPage (Task.succeed whichPage)
+switchPageCmd : WhichPage -> Maybe String -> Cmd Msg
+switchPageCmd whichPage domid =
+    Task.perform (SwitchPage whichPage) <| Task.succeed domid
 
 
-switchPage : WhichPage -> Model -> ( Model, Cmd Msg )
-switchPage whichPage model =
+switchPage : WhichPage -> Maybe String -> Model -> ( Model, Cmd Msg )
+switchPage whichPage domid model =
     let
         isPublic =
             whichPage == PublicChatsPage
@@ -1355,6 +1387,17 @@ switchPage whichPage model =
                 , publicChats = []
                 , error = Nothing
             }
+
+        realDomid =
+            case domid of
+                Just id ->
+                    domid
+
+                Nothing ->
+                    if whichPage /= MainPage then
+                        Nothing
+                    else
+                        firstMemberChatInputId model
     in
     mdl2
         ! [ if isPublic then
@@ -1366,7 +1409,23 @@ switchPage whichPage model =
 
                     Just info ->
                         ElmChat.restoreScroll info.settings
+          , domFocusCmd realDomid
           ]
+
+
+firstMemberChatInputId : Model -> Maybe String
+firstMemberChatInputId model =
+    case Dict.get model.currentChat model.chats of
+        Nothing ->
+            Nothing
+
+        Just chat ->
+            case chat.members of
+                ( memberid, _ ) :: _ ->
+                    Just <| chatInputId memberid
+
+                _ ->
+                    Nothing
 
 
 serverChatKey : GameId -> Server -> ChatKey
@@ -1585,9 +1644,9 @@ pageSelector model =
             model.whichPage == PublicChatsPage
     in
     div []
-        [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage
+        [ maybeLink (not isMain) "Chat" <| SwitchPage MainPage Nothing
         , text " "
-        , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage
+        , maybeLink (not isPublicChat) "Public" <| SwitchPage PublicChatsPage Nothing
         ]
 
 
@@ -1765,6 +1824,11 @@ activityString model =
                     ""
 
 
+chatInputId : PlayerId -> String
+chatInputId memberid =
+    "input:" ++ memberid
+
+
 inputRows : Model -> ChatInfo -> List (Html Msg)
 inputRows model info =
     let
@@ -1780,6 +1844,7 @@ inputRows model info =
                         [ onFocus (Focused True)
                         , onBlur (Focused False)
                         , autofocus True
+                        , Attributes.id <| chatInputId id
                         ]
                         []
                         40
@@ -2429,7 +2494,7 @@ continueRestore model =
             let
                 ( mdl3, cmd2 ) =
                     if mdl2.whichPage == PublicChatsPage then
-                        switchPage PublicChatsPage mdl2
+                        switchPage PublicChatsPage Nothing mdl2
                     else
                         ( mdl2, Cmd.none )
             in
@@ -2446,6 +2511,6 @@ continueRestore model =
 
         _ ->
             if model.whichPage == PublicChatsPage then
-                switchPage PublicChatsPage model
+                switchPage PublicChatsPage Nothing model
             else
                 model ! []
