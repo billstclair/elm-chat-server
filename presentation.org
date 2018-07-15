@@ -2,7 +2,7 @@ WebSocket Client AND Server in Elm
 - Elm Eugene
 - Wednesday, August 1, 2018, 5:30pm PDT
 - Bill St. Clair <billstclair@gmail.com>
-
+  
 Links:
 - [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
 - [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
@@ -30,11 +30,13 @@ Open a new window in Chrome. Hide the others.
 
 Test http://localhost:8000
 
-Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on Slack then.
+Open a Chrome tab to [[https://xossbow.com/chat/][xossbow.com/chat]], create the "Elm Eugene" public chat.
+
+Local meeting starts at 8:30pm EDT (5:30 PDT). Zoom meeting starts around 9pm EDT. Link on Slack then.
 
 - Share screen in Zoom.
 - Emacs first, Chrome for code, Desktop for demo
-- C-x n, C-x p
+- Switch slides: C-x n, C-x p
 
 * Intro
 
@@ -43,19 +45,79 @@ As part of my Elm version of two board games that my son invented, [[https://gib
 Hence were born [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]] and
 [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][billstclair/elm-websocket-framework-server]]. 
 
+* Chat example
+
 I built a very simple example, included with those packages, and a near-real-world, multi-user, multi-session, chat example, at [[https://xossbow.com/chat][xossbow.com/chat]]. I'll show you the chat example now, so you can see this technology's potential. Anybody who wants to, go to that link now, and I'll guide you through connecting with me.
+
+[demo]
+
+* LocalStorage and chat UI
 
 The chat app uses [[https://github.com/billstclair/elm-localstorage][billstclair/elm-localstorage]] for its persistence. There's a presentation I wrote for that [[https://github.com/billstclair/elm-localstorage-presentation/blob/master/presentation.org][here]]. You can see the persistence in the Chrome debugger's "Application" tab.
 
+[demo]
+
+The chat app uses [[https://github.com/billstclair/elm-chat][billstclair/elm-chat]], for the chat user interface and [[https://github.com/billstclair/elm-system-notification][billstclair/elm-system-notification]] for browser notifications. Chase those links yourself if you're interested.
+
 * The wire protocol
+
+elm-websocket-framework sends JSON over the wire, formatted as follows:
+
+    ["req", "<name>",
+     { "<key>": value, ... }]
+
+    ["rsp", "<name>",
+     { "<key>": value, ... }]
+
+"req" is usually used for requests from client to server, and "rsp" for responses, but nothing in the code enforces that distinction.
+
+You can see this in the Chrome "Network" tab ("Network", refresh, "localhost", "Frames").
+
+[demo]
 
 * The Message type
 
+Applications use the [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/Types.elm#L114][Message]] type to encode the wire protocol internally:
+
+type Message
+    = JoinChatReq
+        { chatid : GameId
+        , memberName : MemberName
+        }
+    | JoinChatRsp
+        { chatid : GameId
+        , memberid : Maybe PlayerId
+        , ...
+        }
+    | SendReq
+        { memberid : PlayerId
+        , message : String
+        }
+    | ReceiveRsp
+        { chatid : GameId
+        , memberName : MemberName
+        , message : String
+        }
+
 * Encoders and decoders for Messages
+
+The first thing I do when writing a client/server interface is to define the Message type. Then I write encoders and decoders for the messages, and a test suite to test them.
+
+Best explained by looking at the code:
+
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L166][MessageDecoder]] 
+  [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L235][messageDecoder]]
+
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L170][MessageEncoder]]
+  [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L46][messageEncoder]]
+
+[[https://github.com/billstclair/elm-chat-server/blob/master/tests/Tests.elm#L98][Tests.elm]]
 
 * The message processor
 
-* Development debugging with a simulated server
+TODO
+
+* Development with a simulated server
 
 * Setting up and using a real server
 
@@ -67,11 +129,17 @@ Your turn to ask me about anything.
 
 * Extras
 
-A couple of illustrations of how Elm's strong typing makes massive
+Some illustrations of how Elm's strong typing makes massive
 code changes easy to get right: 
 
-1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm, eliminating duplicate records]]
-2. [[https://github.com/billstclair/elm-chat-server/commit/b87e443636941eeaa40b65813f5ce25dd2f0a609][Reorg keys from chatid to (serverUrl, chatid)]]
+1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm]],
+   eliminating duplicate records
+
+2. [[https://github.com/billstclair/elm-chat-server/commit/b87e443636941eeaa40b65813f5ce25dd2f0a609][Reorg chat Dict keys]]
+   from chatid to (serverUrl, chatid)
+
+3.  [[https://github.com/billstclair/elm-websocket-framework-server/commit/ba22b80974264cb839ca2063a608f7bac1032aa2][Eliminate]]
+    WebSocketFramework.Server.WrappedModel
 
 * Local Variables
 
