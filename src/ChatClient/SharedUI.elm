@@ -20,7 +20,7 @@ module ChatClient.SharedUI
 
 {-| TODO
 
-Delayed notification kicks in even when active. Needs work.
+Some small inconsistencies after refreshing page. Doesn't stay on Public Chats page if a member of more than one of them. May not have the same chat selected after refresh.
 
 Focus should move back to the text input box after clicking the "Send" button. Just featuring that you can use Enter/Return to send will help.
 
@@ -91,20 +91,18 @@ import Html
         ( Attribute
         , Html
         , a
-        , button
         , div
         , h2
-        , input
         , option
         , p
-        , select
         , span
         , table
         , text
         )
 import Html.Attributes
     exposing
-        ( checked
+        ( autofocus
+        , checked
         , class
         , colspan
         , disabled
@@ -112,10 +110,20 @@ import Html.Attributes
         , selected
         , size
         , style
+        , tabindex
         , type_
         , value
         )
-import Html.Events exposing (on, onCheck, onClick, onInput, targetValue)
+import Html.Events
+    exposing
+        ( on
+        , onBlur
+        , onCheck
+        , onClick
+        , onFocus
+        , onInput
+        , targetValue
+        )
 import Http
 import Json.Decode as JD exposing (Decoder)
 import Json.Decode.Pipeline as DP exposing (decode, hardcoded, optional, required)
@@ -179,12 +187,6 @@ subscriptions model =
                     Just receivePort ->
                         receivePort <|
                             LS.receiveWrapper ReceiveLocalStorage localStoragePrefix
-              , case model.delayedNotify of
-                    Nothing ->
-                        Sub.none
-
-                    Just ( delay, _ ) ->
-                        Time.every delay DelayedNotify
               ]
             , Dict.toList model.connectedServers
                 |> List.map
@@ -262,7 +264,7 @@ type alias Model =
     , showNotifications : Bool
     , notifyPort : NotifyPort Msg
     , lastNotifyTime : Time
-    , delayedNotify : Maybe ( Time, String )
+    , focused : Bool
     , error : Maybe String
     }
 
@@ -271,7 +273,6 @@ type Msg
     = Noop
     | SetTime Time
     | DelayedAction (Model -> ( Model, Cmd Msg )) Time
-    | DelayedNotify Time
     | SwitchPage WhichPage
     | ChatUpdate (ElmChat.Settings Msg) (Cmd Msg)
     | ChatSend PlayerId String (ElmChat.Settings Msg)
@@ -289,6 +290,7 @@ type Msg
     | JoinChat
     | LeaveChat PlayerId
     | ClearChat
+    | Focused Bool
     | JoinPublicChat (Maybe GameId)
     | NewPublicChat
     | RefreshPublicChats
@@ -368,7 +370,7 @@ init ports receiveItemPort notify =
     , showNotifications = False
     , notifyPort = notify
     , lastNotifyTime = 0
-    , delayedNotify = Nothing
+    , focused = True
     , error = Nothing
     }
         ! [ Http.send ReceiveServerLoadFile <| Http.getString serverLoadFile
@@ -520,22 +522,10 @@ updateInternal msg model =
             model ! []
 
         SetTime time ->
-            { model | time = time, lastNotifyTime = time } ! []
+            { model | time = time } ! []
 
         DelayedAction updater time ->
             updater { model | time = time }
-
-        DelayedNotify time ->
-            case model.delayedNotify of
-                Nothing ->
-                    model ! []
-
-                Just ( _, message ) ->
-                    { model
-                        | lastNotifyTime = model.time
-                        , delayedNotify = Nothing
-                    }
-                        ! [ notificationCmd message model ]
 
         WebSocketMessage server json ->
             case decodeMessage messageDecoder json of
@@ -571,12 +561,15 @@ updateInternal msg model =
                           , saveChat chat2 model
                           ]
 
+        Focused focused ->
+            { model
+                | focused = focused
+            }
+                ! []
+
         _ ->
-            updateUIChanges msg
-                { model
-                    | lastNotifyTime = model.time
-                    , delayedNotify = Nothing
-                }
+            -- This is separated because we used to set lastNotifyTime
+            updateUIChanges msg model
 
 
 updateUIChanges : Msg -> Model -> ( Model, Cmd Msg )
@@ -1006,35 +999,27 @@ minIdleTimeBeforeNotification =
 
 notify : String -> Model -> ( Model, Cmd Msg )
 notify message model =
-    let
-        time =
-            model.time
+    if not (model.showNotifications && not model.focused) then
+        model ! []
+    else
+        let
+            time =
+                model.time
 
-        lastNotifyTime =
-            model.lastNotifyTime
+            lastNotifyTime =
+                model.lastNotifyTime
 
-        diff =
-            log "Ticks until notify" <|
+            diff =
                 time
                     - (lastNotifyTime + minIdleTimeBeforeNotification)
-    in
-    if model.showNotifications && diff > 0 then
-        { model
-            | lastNotifyTime = model.time
-            , delayedNotify = Nothing
-        }
-            ! [ notificationCmd message model ]
-    else
-        case model.delayedNotify of
-            Just _ ->
-                model ! []
-
-            Nothing ->
-                { model
-                    | delayedNotify =
-                        Just ( negate diff, message )
-                }
-                    ! []
+        in
+        if diff > 0 then
+            { model
+                | lastNotifyTime = model.time
+            }
+                ! [ notificationCmd message model ]
+        else
+            model ! []
 
 
 notificationCmd : String -> Model -> Cmd Msg
@@ -1119,8 +1104,7 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                             }
                     in
                     mdl
-                        ! [ switchPageCmd MainPage
-                          , if chatkey == model.currentChat then
+                        ! [ if chatkey == model.currentChat then
                                 cmd
                             else
                                 Cmd.none
@@ -1177,7 +1161,10 @@ joinChatRspDelayed chatid memberid memberName otherMembers isPublic server model
                                                 Dict.insert chatkey info2 mdl.chats
                                         }
                                 in
-                                mdl2 ! [ saveChat info2 mdl2 ]
+                                mdl2
+                                    ! [ switchPageCmd MainPage
+                                      , saveChat info2 mdl2
+                                      ]
 
                 NewPendingChat info ->
                     -- Newly create chat
@@ -1518,53 +1505,30 @@ table.prettytable caption {
 """
 
 
-hourFormat : Format Date String
-hourFormat =
-    F.padLeft 2 '0' (Date.hour >> F.int)
+focusAttributes : List (Attribute Msg)
+focusAttributes =
+    [ onFocus <| Focused True
+    , onBlur <| Focused False
+    ]
 
 
-minuteFormat : Format Date String
-minuteFormat =
-    F.padLeft 2 '0' (Date.minute >> F.int)
+focusedNode : (List (Attribute Msg) -> List (Html Msg) -> Html Msg) -> List (Attribute Msg) -> List (Html Msg) -> Html Msg
+focusedNode node attributes body =
+    node
+        (List.append attributes focusAttributes)
+        body
 
 
-secondFormat : Format Date String
-secondFormat =
-    F.padLeft 2 '0' (Date.second >> F.int)
+input =
+    focusedNode Html.input
 
 
-timeStampFormat : Format Date String
-timeStampFormat =
-    hourFormat <> F.s ":" <> minuteFormat <> F.s ":" <> secondFormat
+button =
+    focusedNode Html.button
 
 
-timeFormat : Format Date String
-timeFormat =
-    hourFormat <> F.s ":" <> minuteFormat
-
-
-timestamp : Model -> String
-timestamp model =
-    let
-        time =
-            model.time
-
-        date =
-            Date.fromTime time
-    in
-    F.print timeStampFormat date
-
-
-time : Model -> String
-time model =
-    let
-        time =
-            model.time
-
-        date =
-            Date.fromTime time
-    in
-    F.print timeFormat date
+select =
+    focusedNode Html.select
 
 
 view : Model -> Html Msg
@@ -1812,7 +1776,12 @@ inputRows model info =
             tr
                 [ th <| name ++ ": "
                 , Html.td [ colspan 3 ]
-                    [ ElmChat.inputBox
+                    [ ElmChat.styledInputBox
+                        [ onFocus (Focused True)
+                        , onBlur (Focused False)
+                        , autofocus True
+                        ]
+                        []
                         40
                         "Send"
                         (ChatSend id)
