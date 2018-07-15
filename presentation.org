@@ -120,8 +120,18 @@ TODO
 * Development with a simulated server
 
 * Setting up and using a real server
-
+  
 * Games and players
+
+ElmWebsocketFramework supports three levels of state:
+
+1. No state, as in its own [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example][example]].
+
+2. Server-wide state, which I've never used, but support because it seems likely that somebody will want it: [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-Types#ServerState][ServerState.state]].
+
+3. Games and players, which I call chats and members in the chat example. These are provided by [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#addGame][addGame]], [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#getGame][getGame]], and friends.
+
+The server keeps track of the relationships between games, players, and sockets, providing an [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#UserFunctions][API]] for you to decide if a game should be deleted when all of its sockets are closed, and to be notified when a game or player is automatically deleted.
 
 * Questions
 
