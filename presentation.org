@@ -139,9 +139,11 @@ Your top-level server code must create a [[http://package.elm-lang.org/packages/
 
 [[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
 
-There are instructions for setting up, building, and running the server in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory.
+Instructions for setting up, building, and running the server are in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory.
 
-There is a simple, low-level client, which sends raw message strings to the server: [[http://localhost:8081][localhost:8081]]
+There is a simple, low-level client, which sends raw message strings:
+
+[[http://localhost:8081][localhost:8081]]
 
 [demo]
 
