@@ -10,7 +10,7 @@ Links:
 - [[https://xossbow.com/chat/][xossbow.com/chat]]
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]]
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][elm-websocket-framework-server]]
-   
+
 * Intro
 
 As part of my Elm version of two board games that my son invented, [[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and [[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to generalize and share my technology.
@@ -131,6 +131,8 @@ Your top-level server code must create a [[http://package.elm-lang.org/packages/
 
 [[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
 
+There are instructions for setting up, building, and running the server in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory.
+
 The chat app [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/Server.elm#L284][server]] is, again, much more complicated, and I'll leave chasing that link to you.
 
 * Server State
@@ -148,6 +150,8 @@ ElmWebSocketFramework.Server keeps track of the relationships between games, pla
 * Questions
 
 Your turn to ask me about anything.
+
+I finished this presentation two weeks before giving it. Hopefully that will have given me time to start adding the server side to [[http://jsmaze.com][JSMaze]].
 
 * Extras
 
