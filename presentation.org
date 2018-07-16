@@ -97,7 +97,9 @@ messageProcessor :
 #+END_SRC
 We'll look at the code from the very simple example that ships with the WebSocketFramework module.
 
-[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/ExampleInterface.elm#L30][ExampleInterface.elm]]
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/ExampleInterface.elm#L30][ExampleInterface.elm]], line 30
+
+The [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/Interface.elm#L67][messageProcessor]] for the chat app is much more complicated. Chase that link yourself, if interested.
 
 * Development with a simulated server
 
@@ -128,6 +130,8 @@ Again, we'll look at the example from billstclair/elm-websocket-framework:
 Your top-level server code must create a [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#UserFunctions][UserFunctions]] instance, and pass it to [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#program][WebSocketFramework.Server.program]].
 
 [[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
+
+The chat app [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/Server.elm#L284][server]] is, again, much more complicated, and I'll leave chasing that link to you.
 
 * Server State
 
