@@ -83,7 +83,7 @@ Best explained by looking at the code:
 - [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L235][messageDecoder]]
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-Types#MessageEncoder][MessageEncoder]]
 - [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L46][messageEncoder]]
-- [[https://github.com/billstclair/elm-chat-server/blob/master/tests/Tests.elm#L98][Tests.elm]]
+- [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/tests/Tests.elm#L98][Tests.elm]]
 
 * Message processing
 
