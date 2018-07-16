@@ -5,14 +5,12 @@ WebSocket Client AND Server in Elm
   
 Links:
 - [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
-- [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
 - [[https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
 - [[https://xossbow.com/chat/][xossbow.com/chat]]
+- [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
+- [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]]
+- [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][elm-websocket-framework-server]]
    
-* Org mode
-
-This is an Emacs Org Mode file. Many features will be missing if you don't have Emacs.
-
 * Setup
 
 To be done before the presentation.
@@ -32,7 +30,7 @@ Test http://localhost:8000
 
 Open a Chrome tab to [[https://xossbow.com/chat/][xossbow.com/chat]], create the "Elm Eugene" public chat.
 
-Local meeting starts at 8:30pm EDT (5:30 PDT). Zoom meeting starts around 9pm EDT. Link on Slack then.
+Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on Slack then.
 
 - Share screen in Zoom.
 - Emacs first, Chrome for code, Desktop for demo
@@ -78,7 +76,7 @@ You can see this in the Chrome "Network" tab ("Network", refresh, "localhost", "
 * The Message type
 
 Applications use the [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/Types.elm#L114][Message]] type to encode the wire protocol internally:
-
+#+BEGIN_SRC
 type Message
     = JoinChatReq
         { chatid : GameId
@@ -98,30 +96,33 @@ type Message
         , memberName : MemberName
         , message : String
         }
-
+#+END_SRC
 * Encoders and decoders for Messages
 
 The first thing I do when writing a client/server interface is to define the Message type. Then I write encoders and decoders for the messages, and a test suite to test them.
 
 Best explained by looking at the code:
 
-[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L166][MessageDecoder]] 
-  [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L235][messageDecoder]]
-
-[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L170][MessageEncoder]]
-  [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L46][messageEncoder]]
+- [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L166][MessageDecoder]]
+- [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L235][messageDecoder]]
+- [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L170][MessageEncoder]]
+- [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L46][messageEncoder]]
 
 [[https://github.com/billstclair/elm-chat-server/blob/master/tests/Tests.elm#L98][Tests.elm]]
 
-* The message processor
+* Message processing
 
 TODO
 
 * Development with a simulated server
 
+TODO
+
 * Setting up and using a real server
+
+TODO
   
-* Games and players
+* Server State
 
 ElmWebsocketFramework supports three levels of state:
 
@@ -150,6 +151,34 @@ code changes easy to get right:
 
 3.  [[https://github.com/billstclair/elm-websocket-framework-server/commit/ba22b80974264cb839ca2063a608f7bac1032aa2][Eliminate]]
     WebSocketFramework.Server.WrappedModel
+
+* Org mode
+
+This is an Emacs Org Mode file. Many features will be missing if you don't have Emacs.
+
+To make #+BEGIN_SRC and #+END_SRC invisible, put this in ~/.emacs:
+
+(set-face-attribute 'org-meta-line
+ nil :height 1 :foreground "white")
+
+To make C-x n and C-x p work:
+
+(defun org-open-next (&optional arg)
+   "Keyboard macro."
+   (interactive "p")
+   (kmacro-exec-ring-item
+    '([S-tab ?\C-a ?\C-n tab] 0 "%d")
+    arg))
+
+(defun org-open-prev (&optional arg)
+   "Keyboard macro."
+   (interactive "p")
+   (kmacro-exec-ring-item
+     '([S-tab ?\C-a ?\C-p tab] 0 "%d")
+     arg))
+
+(define-key ctl-x-map "n" 'org-open-next)
+(define-key ctl-x-map "p" 'org-open-prev)
 
 * Local Variables
 
