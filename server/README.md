@@ -44,3 +44,8 @@ to get a very simple test client that sends the strings you type over the wire a
 If you want to run your server on a port other than 8081, you can set the `PORT` environment variable:
 
 * `PORT=8800 npm run start:server`
+
+There are a couple of scripts in the `bin` directory:
+
+* `bin/m <foo>` runs `elm make` on the `../src/<foo>.elm`, discarding the output.
+* `bin/update-site` runs my [`rsyncit`](https://github.com/billstclair/wws-scripts#rsyncit) script on this directory, excluding the binary output directories. This uploads changes to the server specified by `.sshdir`.
