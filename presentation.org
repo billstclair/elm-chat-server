@@ -185,8 +185,8 @@ To be done before the presentation.
 - cd ~/elm-websocket-framework/example
 - elm reactor
 - In another shell:
-- cd ~/elm-websocket-framework/example
-- cd server
+- cd ~/elm-websocket-framework-server
+- cd example/server
 - npm run build:server
 - VERBOSE=yes npm run start:server
 - Test http://localhost:8000
