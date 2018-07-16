@@ -5,37 +5,12 @@ WebSocket Client AND Server in Elm
   
 Links:
 - [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
+- [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
 - [[https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
 - [[https://xossbow.com/chat/][xossbow.com/chat]]
-- [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/latest][billstclair/elm-websocket-framework]]
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][elm-websocket-framework-server]]
    
-* Setup
-
-To be done before the presentation.
-
-- cd ~/elm-websocket-framework-server/example/server
-- npm run build:server
-- npm run start:server
-- cd ~/elm-websocket-framework/example
-- elm reactor
-
-Open a new window in Chrome. Hide the others.
-- Make Chrome the default browser.
-- Make the default font bigger.
-- chrome://settings/fonts
-
-Test http://localhost:8000
-
-Open a Chrome tab to [[https://xossbow.com/chat/][xossbow.com/chat]], create the "Elm Eugene" public chat.
-
-Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on Slack then.
-
-- Share screen in Zoom.
-- Emacs first, Chrome for code, Desktop for demo
-- Switch slides: C-x n, C-x p
-
 * Intro
 
 As part of my Elm version of two board games that my son invented, [[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and [[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to generalize and share my technology.
@@ -60,14 +35,14 @@ The chat app uses [[https://github.com/billstclair/elm-chat][billstclair/elm-cha
 * The wire protocol
 
 elm-websocket-framework sends JSON over the wire, formatted as follows:
+#+BEGIN_SRC
+["req", "<name>", { "<k>": <v>, ...}]
 
-    ["req", "<name>",
-     { "<key>": value, ... }]
-
-    ["rsp", "<name>",
-     { "<key>": value, ... }]
-
+["rsp", "<name>", { "<k>": <v>, ...}]
+#+END_SRC
 "req" is usually used for requests from client to server, and "rsp" for responses, but nothing in the code enforces that distinction.
+
+This is an enclosing array, containing two strings and an object. The values of the object keys are arbitrary, so you must write JSON encoders and decoders for them, as discussed below.
 
 You can see this in the Chrome "Network" tab ("Network", refresh, "localhost", "Frames").
 
@@ -103,25 +78,57 @@ The first thing I do when writing a client/server interface is to define the Mes
 
 Best explained by looking at the code:
 
-- [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L166][MessageDecoder]]
+- [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-Types#MessageDecoder][MessageDecoder]]
+- [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-EncodeDecode#genericMessageDecoder][genericMessageDecoder]]
 - [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L235][messageDecoder]]
-- [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/src/WebSocketFramework/Types.elm#L170][MessageEncoder]]
+- [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-Types#MessageEncoder][MessageEncoder]]
 - [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/ChatClient/EncodeDecode.elm#L46][messageEncoder]]
-
-[[https://github.com/billstclair/elm-chat-server/blob/master/tests/Tests.elm#L98][Tests.elm]]
+- [[https://github.com/billstclair/elm-chat-server/blob/master/tests/Tests.elm#L98][Tests.elm]]
 
 * Message processing
 
-TODO
+A message processor maps a ServerState and a request Message to a possibly updated ServerState and an optional response Message.
+#+BEGIN_SRC
+messageProcessor :
+  ServerState GameState Player ->
+  Message ->
+  ( ServerState GameState Player
+  , Maybe Message )
+#+END_SRC
+We'll look at the code from the very simple example that ships with the WebSocketFramework module.
+
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/ExampleInterface.elm#L30][ExampleInterface.elm]]
 
 * Development with a simulated server
 
-TODO
+WebSocketFramework.ServerInterface provides two functions for creating client-side server interfaces. For development, you'll use the "proxy" server, which sends nothing over the wire, going directly to your message processor:
 
-* Setting up and using a real server
+[[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#makeProxyServer][makeProxyServer]]
+  fullProcessor (IncomingMessage True)
 
-TODO
-  
+We'll look at the example that ships with billstclair/elm-websocket-framework:
+
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/Example.elm#L99][Example.elm]], line 99
+
+* Talking to a real server
+
+On the client side, to communicate with a real server, you use:
+
+[[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#makeServer][makeServer]]
+  messageEncoder model.urlString Noop
+
+Again, we'll look at the example from billstclair/elm-websocket-framework:
+
+[[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/Example.elm#L193][Example.elm]], line 193
+
+* The server side
+
+[[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][billstclair/elm-websocket-framework-server]] requires Node.js. 
+
+Your top-level server code must create a [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#UserFunctions][UserFunctions]] instance, and pass it to [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#program][WebSocketFramework.Server.program]].
+
+[[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
+
 * Server State
 
 ElmWebsocketFramework supports three levels of state:
@@ -132,7 +139,7 @@ ElmWebsocketFramework supports three levels of state:
 
 3. Games and players, which I call chats and members in the chat example. These are provided by [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#addGame][addGame]], [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework/11.0.2/WebSocketFramework-ServerInterface#getGame][getGame]], and friends.
 
-The server keeps track of the relationships between games, players, and sockets, providing an [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#UserFunctions][API]] for you to decide if a game should be deleted when all of its sockets are closed, and to be notified when a game or player is automatically deleted.
+ElmWebSocketFramework.Server keeps track of the relationships between games, players, and sockets, providing an [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/13.0.0/WebSocketFramework-Server#UserFunctions][API]] for you to decide if a game should be deleted when all of its sockets are closed, and to be notified when a game or player is automatically deleted.
 
 * Questions
 
@@ -140,8 +147,7 @@ Your turn to ask me about anything.
 
 * Extras
 
-Some illustrations of how Elm's strong typing makes massive
-code changes easy to get right: 
+Some illustrations of how Elm's strong typing makes massive code changes easy to get right (links are to GitHub commits):
 
 1. [[https://github.com/billstclair/elm-chat-server/commit/a71d4376e58fae62f07ad7404fcc9e0eca5c26f1][Reorganize ChatClient.elm]],
    eliminating duplicate records
@@ -149,20 +155,47 @@ code changes easy to get right:
 2. [[https://github.com/billstclair/elm-chat-server/commit/b87e443636941eeaa40b65813f5ce25dd2f0a609][Reorg chat Dict keys]]
    from chatid to (serverUrl, chatid)
 
-3.  [[https://github.com/billstclair/elm-websocket-framework-server/commit/ba22b80974264cb839ca2063a608f7bac1032aa2][Eliminate]]
-    WebSocketFramework.Server.WrappedModel
+3. [[https://github.com/billstclair/elm-websocket-framework-server/commit/ba22b80974264cb839ca2063a608f7bac1032aa2][Eliminate]]
+   WebSocketFramework.Server.WrappedModel
+
+* Setup
+
+To be done before the presentation.
+
+- cd ~/elm-websocket-framework/example
+- elm reactor
+- In another shell:
+- cd ~/elm-websocket-framework/example
+- cd server
+- npm run build:server
+- VERBOSE=yes npm run start:server
+
+Open a new window in Chrome. Hide the others.
+- Make Chrome the default browser.
+- Make the default font bigger.
+- chrome://settings/fonts
+
+Test http://localhost:8000
+
+Open a Chrome tab to [[https://xossbow.com/chat/][xossbow.com/chat]], create the "Elm Eugene" public chat.
+
+Local meeting starts at 8:30pm EDT. Zoom meeting starts around 9pm EDT. Link on Slack then.
+
+- Share screen in Zoom.
+- Emacs first, Chrome for code, Desktop for demo
+- Switch slides: C-x n, C-x p
 
 * Org mode
 
-This is an Emacs Org Mode file. Many features will be missing if you don't have Emacs.
+This is an Emacs Org Mode file. Hence, it is much easier to edit in Emacs.
 
 To make #+BEGIN_SRC and #+END_SRC invisible, put this in ~/.emacs:
-
+#+BEGIN_SRC emacs-lisp
 (set-face-attribute 'org-meta-line
- nil :height 1 :foreground "white")
-
+ nil :height 1.0 :foreground "white")
+#+END_SRC emacs-lisp
 To make C-x n and C-x p work:
-
+#+BEGIN_SRC emacs-lisp
 (defun org-open-next (&optional arg)
    "Keyboard macro."
    (interactive "p")
@@ -179,7 +212,7 @@ To make C-x n and C-x p work:
 
 (define-key ctl-x-map "n" 'org-open-next)
 (define-key ctl-x-map "p" 'org-open-prev)
-
+#+END_SRC emacs-lisp
 * Local Variables
 
 # Local Variables:
