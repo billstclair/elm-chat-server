@@ -112,6 +112,10 @@ We'll look at the example that ships with billstclair/elm-websocket-framework:
 
 [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/Example.elm#L99][Example.elm]], line 99
 
+[[http://localhost:8000/Example.elm][localhost:8000/Example.elm]]
+
+[demo] 
+
 * Talking to a real server
 
 On the client side, to communicate with a real server, you use:
@@ -123,6 +127,10 @@ Again, we'll look at the example from billstclair/elm-websocket-framework:
 
 [[https://github.com/billstclair/elm-websocket-framework/blob/11.0.2/example/Example.elm#L193][Example.elm]], line 193
 
+[[http://localhost:8000/Example.elm][localhost:8000/Example.elm]]
+
+[demo]
+
 * The server side
 
 [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][billstclair/elm-websocket-framework-server]] requires Node.js. 
@@ -132,6 +140,10 @@ Your top-level server code must create a [[http://package.elm-lang.org/packages/
 [[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
 
 There are instructions for setting up, building, and running the server in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory.
+
+There is a simple, low-level client, which sends raw message strings to the server: [[http://localhost:8081][localhost:8081]]
+
+[demo]
 
 The chat app [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/Server.elm#L284][server]] is, again, much more complicated, and I'll leave chasing that link to you.
 
@@ -178,12 +190,13 @@ To be done before the presentation.
 - npm run build:server
 - VERBOSE=yes npm run start:server
 
+Test http://localhost:8000
+Test http://localhost:8081
+
 Open a new window in Chrome. Hide the others.
 - Make Chrome the default browser.
 - Make the default font bigger.
 - chrome://settings/fonts
-
-Test http://localhost:8000
 
 Open a Chrome tab to [[https://xossbow.com/chat/][xossbow.com/chat]], create the "Elm Eugene" public chat.
 
