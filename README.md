@@ -26,5 +26,3 @@ See the [`server`](server/) directory's README for instructions on installing, b
 There are tests for message encoding and decoding. See the README in the [`tests`](tests/) directory for instructions for running them.
 
 There's a live client, pointing at a live server, at [xossbow.com/chat](https://xossbow.com/chat/).
-
-There are notes on the code in the README file in the [src](src/) directory.
