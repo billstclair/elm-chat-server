@@ -4,7 +4,7 @@ WebSocket Client AND Server in Elm
 - Bill St. Clair <billstclair@gmail.com>
   
 Links:
-- [[https://www.meetup.com/Elm-Eug/events/250177941/][www.meetup.com/Elm-Eug/events/250177941]]
+- [[https://www.meetup.com/Elm-Eug/events/250177941/][meetup.com/Elm-Eug/events/250177941]]
 - [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
 - [[https://github.com/billstclair/elm-chat-server/blob/master/presentation.org][presentation.org]]
 - [[https://xossbow.com/chat/][xossbow.com/chat]]
