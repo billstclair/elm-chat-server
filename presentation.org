@@ -147,7 +147,7 @@ There is a simple, low-level client, which sends raw message strings to the serv
 
 The chat app [[https://github.com/billstclair/elm-chat-server/blob/elm-eugene-180801/src/Server.elm#L284][server]] is, again, much more complicated, and I'll leave chasing that link to you.
 
-* Server State
+* Server state
 
 ElmWebsocketFramework supports three levels of state:
 
