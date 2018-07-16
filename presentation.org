@@ -189,9 +189,8 @@ To be done before the presentation.
 - cd server
 - npm run build:server
 - VERBOSE=yes npm run start:server
-
-Test http://localhost:8000
-Test http://localhost:8081
+- Test http://localhost:8000
+- Test http://localhost:8081
 
 Open a new window in Chrome. Hide the others.
 - Make Chrome the default browser.
