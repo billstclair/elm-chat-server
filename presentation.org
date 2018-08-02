@@ -2,7 +2,7 @@
 - Elm Eugene
 - Wednesday, August 1, 2018, 5:30pm PDT
 - Bill St. Clair <billstclair@gmail.com>
-  
+
 Links:
 - [[https://www.meetup.com/Elm-Eug/events/250177941/][meetup.com/Elm-Eug/events/250177941]]
 - [[https://github.com/billstclair/elm-chat-server][github.com/billstclair/elm-chat-server]]
@@ -12,6 +12,8 @@ Links:
 - [[http://package.elm-lang.org/packages/billstclair/elm-websocket-framework-server/latest][elm-websocket-framework-server]]
   
 * Intro
+
+Who am I?
 
 As part of my Elm version of two board games that my son invented, [[https://gibgoygames.com/spokes/][Spokes]] and [[https://gibgoygames.com/archmage/][Archmage]], I used [[http://package.elm-lang.org/packages/elm-lang/websocket/latest][elm-lang/websocket]] for the client and [[http://package.elm-lang.org/packages/RGBboy/websocket-server/latest][RGBboy/websocket-server]] for the [[https://nodejs.org/][Node.js]] server of a simple communication mechanism. When it came time to do the server for [[http://jsmaze.com/][JSMaze]], I decided to generalize and share my technology.
 
@@ -139,7 +141,7 @@ Your top-level server code must create a [[http://package.elm-lang.org/packages/
 
 [[https://github.com/billstclair/elm-websocket-framework-server/blob/13.0.0/example/Server.elm#L31][Server.elm]], line 31
 
-Instructions for setting up, building, and running the server are in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory.
+Instructions for setting up, building, and running the server are in the README for the [[https://github.com/billstclair/elm-websocket-framework-server/tree/13.0.0/example/server][example/server]] directory. The server details confuse even me, now that I've forgotten getting it to work, but we can look at it after the questions, if you want. You'll just copy it and change the Elm code.
 
 There is a simple, low-level client, which sends raw message strings:
 
@@ -179,7 +181,7 @@ Some illustrations of how Elm's strong typing makes massive code changes easy to
 
 3. [[https://github.com/billstclair/elm-websocket-framework-server/commit/ba22b80974264cb839ca2063a608f7bac1032aa2][Eliminate]]
    WebSocketFramework.Server.WrappedModel
-
+   
 * Setup
 
 To be done before the presentation.
